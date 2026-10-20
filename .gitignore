@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+aimtuner.log
+config.json
+config.json.tmp
+logs/
+assets/sfx/
+assets/icon.ico
+AimTuner.exe
+_internal/
+config.json.bak-*
+*.bak
+dist/
+build/
+*.zip
