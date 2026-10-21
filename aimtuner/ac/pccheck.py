@@ -123,6 +123,10 @@ VERSION = 1
 # What kind of thing a finding most likely is, from what found it and what it is called; checked in
 # this order, first match wins. "unknown cheat" when it is a cheat but its name says no more.
 KINDS = [
+    # judged by what a program can do, not by its name: said as a possibility
+    (r"how a cheat loader is built", "possible cheat loader (by what it can do)"),
+    (r"how an esp is built", "possible wallhack / ESP (by what it can do)"),
+    (r"how an aimbot is built", "possible aimbot (by what it can do)"),
     (r"ai aimbot|parts of an ai aimbot|screen-grab", "aimbot (AI, reads the screen)"),
     (r"colou?r aimbot|colour bot", "aimbot (colour)"),
     (r"triggerbot", "triggerbot"),
@@ -208,7 +212,9 @@ class Scan:
     def _hit(self, level, what, where):
         # a note is said once per thing found (Windows keeps several entries per program); a failure
         # keeps every place it was found, as evidence
-        key = (level, what) if level == "warn" else (level, what, where.lower())
+        # (a program judged by what it can do is a finding of its own, file by file)
+        per_file = what.startswith("an unsigned program")
+        key = (level, what) if level == "warn" and not per_file else (level, what, where.lower())
         if key not in self._seen:
             self._seen.add(key)
             self.findings.append((level, what, where) + classify(what, where))
@@ -736,7 +742,8 @@ class Scan:
                       ("event logs", self.event_logs), ("change journal", self.journal_age),
                       ("PowerShell history", self.shell_history), ("jump lists", lambda: pcsources.jumplists(self)),
                       ("clock changes", lambda: pcsources.clock(self)), ("Prefetch setting", lambda: pcsources.prefetcher(self)),
-                      ("Windows install", lambda: pcsources.fresh(self))]
+                      ("Windows install", lambda: pcsources.fresh(self)),
+                      ("unsigned programs", lambda: pcsources.unsigned(self))]
             if self.elevated:
                 steps += [("BAM", self.bam), ("Prefetch", self.prefetch), ("deleted files", self.change_journal),
                           ("Windows Defender", lambda: pcsources.defender(self)),

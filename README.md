@@ -1092,6 +1092,7 @@ Anti-cheat > PC check shows the result and runs it again.
 |---|---|
 | Program history (UserAssist, MuiCache, the Compatibility Assistant, Windows 11's PCA launch log, ShimCache, jump lists, Explorer's Run box / typed paths / open-save / search lists; with admin rights BAM and Prefetch) | cheats, loaders, spoofers and cleaners that have been run, even if deleted since |
 | Call of Duty and Siege by name | wallhacks, ESP, chams, silent aim, "unlock all" tools, recoil macros named for either game, and bypasses for their anti-cheats (Ricochet; BattlEye and Mousetrap) - tested against 740,000 file names on a real gaming PC with both games installed, none matched |
+| Unsigned programs in Desktop, Downloads, Documents and temp | judged by what they can do, not their name: one that can read the screen and fake input is built like an aimbot, one that writes into other programs or loads a driver like a cheat loader, one that reads other programs' memory like an ESP. A note (plenty of honest small tools are unsigned); a fail when it is also named or filed under Call of Duty or Siege. Catches a cheat renamed to something innocent |
 | Windows Defender (admin rights) | a cheat folder excluded from scanning; a game cheat Defender caught, even if deleted since |
 | Every file name on drive C: (admin rights) | read from the drive's file table, like the "Everything" search checkers use - no folder too deep or hidden |
 | Installed programs, services and drivers | the same, installed |

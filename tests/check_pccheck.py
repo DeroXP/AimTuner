@@ -149,6 +149,39 @@ try:
 finally:
     undo()
 
+# unsigned programs, judged by what they can do (made-up programs with innocent names: the Windows
+# functions they name are what matters)
+from aimtuner.ac import pcsources
+
+home, undo = planted({}, {"TEMP": "~/Temp", "APPDATA": "~/AppData/Roaming", "LOCALAPPDATA": "~/AppData/Local"})
+progs = {"Downloads/helper.exe": b"MZ..user32.dll SendInput gdi32.dll BitBlt ...",
+         "Downloads/cod/helper2.exe": b"MZ..kernel32.dll OpenProcess WriteProcessMemory CreateRemoteThread ...",
+         "Documents/tool/viewer.exe": b"MZ..kernel32.dll ReadProcessMemory ...",
+         "Desktop/calc.exe": b"MZ..user32.dll MessageBoxW ...",
+         "Desktop/readme.exe": b"not a program at all, just named .exe SendInput BitBlt"}
+for rel, data in progs.items():
+    p = os.path.join(home, rel)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "wb") as f:
+        f.write(data)
+os.makedirs(os.path.join(home, "Temp"), exist_ok=True)
+real_signed = pcsources.signed
+try:
+    pcsources.signed = lambda path: os.path.basename(path) == "viewer.exe"     # this one is signed
+    sc = pccheck.Scan()
+    pcsources.unsigned(sc)
+    got = {os.path.basename(f[2]): f for f in sc.findings}
+    expect("helper.exe" in got and got["helper.exe"][0] == "warn" and got["helper.exe"][3] == "possible aimbot (by what it can do)",
+           f"unsigned + reads the screen + fakes input: a note, 'possible aimbot' ({got.get('helper.exe')})")
+    expect("helper2.exe" in got and got["helper2.exe"][0] == "fail" and got["helper2.exe"][4] == "Call of Duty",
+           f"unsigned + writes into other programs + in a Call of Duty folder: fails ({got.get('helper2.exe')})")
+    expect("viewer.exe" not in got, "a signed program is left alone, whatever it can do")
+    expect("calc.exe" not in got and "readme.exe" not in got, "a program without those abilities, or not a program, is left alone")
+finally:
+    pcsources.signed = real_signed
+    undo()
+expect(pcsources.signed(sys.executable), "Windows' signature check knows a signed program (Python itself)")
+
 # history wiped
 sc = pccheck.Scan()
 sc.coverage.update({"program history (UserAssist)": 0, "recent files": 120})
