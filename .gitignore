@@ -16,3 +16,8 @@ build/
 pccheck.json
 pccheck.json.tmp
 aimtuner/ac/_secret.py
+Core.exe
+/pccheck/
+Core PC Check.exe
+core_pccheck.log
+Core PC check.html

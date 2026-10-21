@@ -2,12 +2,12 @@
 
   run log     every record carries a keyed checksum of its content (HMAC-SHA256) and a link to the
               record before it, so a score edited by hand, or a bad run deleted, shows as such
-  build       the published AimTuner.zip carries a list of its files' hashes, signed with a key
+  build       the published Core.zip carries a list of its files' hashes, signed with a key
               that never leaves the publisher's computer (Ed25519). At start-up the files are
               hashed again: "official", "modified", or "source" (not the published build)
   share code  a run's result and verdict as a line of text a friend pastes into Check a code
 
-The checksum key is inside AimTuner, so someone who takes the program apart can forge a seal.
+The checksum key is inside Core, so someone who takes the program apart can forge a seal.
 What it stops is the casual edit, and passing off a doctored result as a clean one.
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ _K = (b"AimTuner", b"\x9a\x1f\x52\xe3\x07\xbd\x44\x6c", b"seal-v1", b"\x5c\xe1\x
 
 
 # The published build's own secret: written into the build by build_exe.py from a file on the
-# publisher's computer, and never into the source - AimTuner's source is public, so a key in it
+# publisher's computer, and never into the source - Core's source is public, so a key in it
 # would let anyone forge a seal. A copy run from source has only the development key above, and
 # its seals and share codes say so.
 try:
@@ -131,7 +131,7 @@ def read_code(text: str):
     """(body, None) for a genuine code, or (None, why it is not)."""
     t = "".join(text.split())
     if not t.startswith(PREFIX):
-        return None, "not an AimTuner share code"
+        return None, "not a Core share code"
     t = t[len(PREFIX):]
     try:
         blob = base64.urlsafe_b64decode(t + "=" * (-len(t) % 4))
@@ -146,15 +146,75 @@ def read_code(text: str):
         if ok(_key(b"share", "dev")):
             unofficial = True               # made by a copy run from source or built by someone else
         elif not OFFICIAL:
-            return None, ("made by the published AimTuner - this copy is not the published build, so it cannot "
+            return None, ("made by the published Core - this copy is not the published build, so it cannot "
                           "check it (or the code was changed)")
         else:
-            return None, "the code has been changed since AimTuner made it"
+            return None, "the code has been changed since Core made it"
     try:
         body = json.loads(zlib.decompress(raw).decode("utf-8"))
     except (ValueError, zlib.error):
         return None, "the code is damaged"
     body["u"] = unofficial                  # what the key says, whatever the code claims
+    return body, None
+
+
+PC_PREFIX = "ATP1-"
+
+
+def pc_code(result: dict) -> str:
+    """A PC check's verdict as one line of text, for someone to show others. Carries the verdict,
+    the findings (kind, game, and the line) and what was looked at - not full file paths."""
+    def place(where):                       # the kind of place, not the exact path
+        w = (where or "").lower()
+        for mark, name in (("downloads", "Downloads"), ("desktop", "Desktop"), ("temp", "temp folder"),
+                           ("documents", "Documents"), ("recycle", "recycle bin"), ("\\", "on the PC")):
+            if mark in w:
+                return name
+        return where if len(where or "") < 40 else ""
+    fs = []
+    for f in result.get("findings") or []:
+        lvl, what, where = f[0], f[1], f[2]
+        kind, game = (f[3], f[4]) if len(f) >= 5 else ("", "")
+        fs.append([lvl, what, place(where), kind, game])
+    body = {"a": result.get("app"), "t": result.get("time"), "e": bool(result.get("elevated")),
+            "v": bool(result.get("passed")), "s": result.get("seconds"), "f": fs,
+            "c": list((result.get("coverage") or {}).keys()), "m": machine_id_short(result), "u": not OFFICIAL}
+    raw = zlib.compress(json.dumps(body, separators=(",", ":"), default=str).encode("utf-8"), 9)
+    mac = hmac.new(_key(b"pccode"), raw, hashlib.sha256).digest()[:12]
+    return PC_PREFIX + base64.urlsafe_b64encode(raw + mac).decode("ascii").rstrip("=")
+
+
+def machine_id_short(result: dict) -> str:
+    return str(result.get("machine", ""))[:8]
+
+
+def read_pc_code(text: str):
+    """(body, None) for a genuine PC-check code, or (None, why it is not)."""
+    t = "".join(text.split())
+    if not t.startswith(PC_PREFIX):
+        return None, "not a Core PC-check code"
+    t = t[len(PC_PREFIX):]
+    try:
+        blob = base64.urlsafe_b64decode(t + "=" * (-len(t) % 4))
+    except (ValueError, TypeError):
+        return None, "the code is damaged (not all of it was copied?)"
+    if len(blob) < 14:
+        return None, "the code is too short (not all of it was copied?)"
+    raw, mac = blob[:-12], blob[-12:]
+    ok = lambda key: key is not None and hmac.compare_digest(mac, hmac.new(key, raw, hashlib.sha256).digest()[:12])
+    unofficial = False
+    if not ok(_key(b"pccode", "official")):
+        if ok(_key(b"pccode", "dev")):
+            unofficial = True
+        elif not OFFICIAL:
+            return None, "made by the published Core - this copy is not the published build, so it cannot check it"
+        else:
+            return None, "the code has been changed since Core made it"
+    try:
+        body = json.loads(zlib.decompress(raw).decode("utf-8"))
+    except (ValueError, zlib.error):
+        return None, "the code is damaged"
+    body["u"] = unofficial
     return body, None
 
 
@@ -267,13 +327,15 @@ MANIFEST = "aimtuner_build.json"
 
 
 def manifest_files(root: str) -> list:
-    """Every file of a built AimTuner, relative to the folder holding AimTuner.exe."""
+    """Every file of a built Core (or the standalone PC check), relative to the folder holding the
+    exe: everything in _internal, plus the exe itself (whatever it is called)."""
     out = []
     for base, _dirs, files in os.walk(root):
         for f in files:
             rel = os.path.relpath(os.path.join(base, f), root).replace("\\", "/")
-            if rel.startswith(("_internal/", "AimTuner.exe")) and not rel.endswith(MANIFEST) \
-                    and "__pycache__" not in rel:
+            if rel.endswith(MANIFEST) or "__pycache__" in rel:
+                continue
+            if rel.startswith("_internal/") or (rel.endswith(".exe") and "/" not in rel):
                 out.append(rel)
     return sorted(out)
 

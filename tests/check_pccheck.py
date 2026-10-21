@@ -275,6 +275,45 @@ else:
 expect(not os.path.exists(os.path.join(ROOT, "aimtuner", "ac", "_secret.py")) or seal.OFFICIAL,
        "the published secret is never left in the source folder")
 
+# ------------------------------------------------------------------ the standalone app's code and report
+from aimtuner.ac import pccheck_app
+
+res = pccheck.Scan(quick=True).run()
+saved = dict(res, app="0.8.3", machine=pccheck.machine_id(), time="2026-10-21T12:00:00",
+             findings=[["fail", "a Call of Duty or Siege cheat: a file", r"C:\x\r6_esp.exe", "wallhack / ESP", "Siege"],
+                       ["warn", "reWASD (remapper with macros)", "reWASD", "macro tool", "any game"]])
+saved["passed"] = False
+code = seal.pc_code(saved)
+expect(code.startswith(seal.PC_PREFIX), "the PC check gives a result code")
+body, err = seal.read_pc_code(code)
+expect(err is None and body["v"] is False and body["f"][0][3] == "wallhack / ESP" and body["f"][0][4] == "Siege",
+       f"the PC-check code reads back with its findings, kinds and games ({err})")
+expect(seal.read_pc_code(code[:12] + ("A" if code[12] != "A" else "B") + code[13:])[0] is None, "a changed PC-check code is refused")
+expect(seal.read_pc_code(seal.share_code({"run_id": "r", "stats": {}, "integrity": {}}))[0] is None,
+       "a run share code is not read as a PC-check code")
+expect(seal.read_code(code)[0] is None, "a PC-check code is not read as a run share code")
+rpt = os.path.join(tmp, "report.html")
+code2 = pccheck_app.write_report(saved, rpt)
+doc = open(rpt, encoding="utf-8").read()
+expect("FAILED" in doc and "WALLHACK / ESP" in doc and "Siege" in doc and code2 in doc, "the HTML report lists the findings and the code")
+expect(code2 == code, "the report's code matches")
+# the standalone writes the same pccheck.json Core reads - so a pass here spares Core its own check
+share = os.path.join(tmp, "shared")
+os.makedirs(share)
+open(os.path.join(share, "config.json"), "w").close()        # pretend a Core install is here
+real_exec = sys.executable
+try:
+    sys.frozen = True
+    sys.executable = os.path.join(share, "Core PC Check.exe")
+    expect(pccheck_app._state_path() == os.path.join(share, "pccheck.json"),
+           "the standalone writes its verdict beside a Core install when it sits next to one")
+finally:
+    sys.executable = real_exec
+    del sys.frozen
+# the check needs none of the game (so the standalone builds small and starts fast)
+heavy = [m for m in ("numpy", "glfw", "OpenGL", "PIL", "aimtuner.game", "aimtuner.engage", "aimtuner.ac.behavior") if m in sys.modules]
+expect(not heavy, f"the PC check loads none of the game or its libraries ({heavy})")
+
 shutil.rmtree(tmp, ignore_errors=True)
 print(f"{checks[0] - len(errors)} of {checks[0]} checks passed")
 sys.exit(1 if errors else 0)

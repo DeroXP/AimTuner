@@ -1,4 +1,4 @@
-"""Read the AimTuner run log and say which controller is doing better.
+"""Read the Core run log and say which controller is doing better.
 
     python analyze.py                 compare controllers on the current settings, every track
     python analyze.py --track cod     only the Call of Duty track (or: core, r6)
@@ -274,7 +274,7 @@ def lab_report(log_dir, as_json):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Compare controllers from the AimTuner run log")
+    ap = argparse.ArgumentParser(description="Compare controllers from the Core run log")
     ap.add_argument("--logdir", default=config.LOG_DIR)
     ap.add_argument("--config", default=config.CONFIG_PATH)
     ap.add_argument("--track", choices=[t.id for t in tracks.TRACKS], help="only this track")

@@ -1,4 +1,4 @@
-"""AimTuner - controller aim benchmark.
+"""Core - controller aim benchmark.
 
     python app.py                 play (fullscreen at the desktop mode)
     python app.py --windowed      play in a window
@@ -14,7 +14,7 @@ import sys
 import tempfile
 import traceback
 
-# (built as AimTuner.exe, the folder the exe is in: aimtuner.log goes beside config.json and logs/)
+# (built as Core.exe, the folder the exe is in: aimtuner.log goes beside config.json and logs/)
 ROOT = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 
 
@@ -24,7 +24,7 @@ def _size(text: str):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="AimTuner - controller aim benchmark")
+    ap = argparse.ArgumentParser(description="Core - controller aim benchmark")
     ap.add_argument("--windowed", action="store_true", help="run in a window instead of fullscreen")
     ap.add_argument("--offscreen", type=_size, metavar="WxH", help="render to an offscreen buffer (no window)")
     ap.add_argument("--bench", action="store_true", help="GPU throughput benchmark, then exit")
@@ -95,7 +95,7 @@ if __name__ == "__main__":
             try:
                 import ctypes
 
-                ctypes.windll.user32.MessageBoxW(None, traceback.format_exc()[-1500:], "AimTuner crashed", 0x10)
+                ctypes.windll.user32.MessageBoxW(None, traceback.format_exc()[-1500:], "Core crashed", 0x10)
             except Exception:
                 pass
         sys.exit(1)

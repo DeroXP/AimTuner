@@ -23,7 +23,7 @@ What "as little lag as possible" means here, step by step:
     in the game code - no aim assist of any kind for this input, ever.
 
 Keyboard reports come down the same pipe so a key bound to Shoot is timed like a
-click. Reports that arrive while AimTuner is not the focused window are thrown
+click. Reports that arrive while Core is not the focused window are thrown
 away unread; nothing typed elsewhere is kept or logged.
 
 The self-test bot drives the same queue through inject(), so everything
@@ -195,7 +195,7 @@ class _RawThread(threading.Thread):
 
         # A message-only window of a stock class: it exists only so reports have somewhere to
         # go, and it needs no window procedure of ours (so no Python callback per message).
-        hwnd = u32.CreateWindowExW(0, "STATIC", "AimTuner raw input", 0, 0, 0, 0, 0, wt.HWND(-3), None, None, None)
+        hwnd = u32.CreateWindowExW(0, "STATIC", "Core raw input", 0, 0, 0, 0, 0, wt.HWND(-3), None, None, None)
         if not hwnd:
             self.ok, self.error = False, f"could not create the input window (error {ctypes.get_last_error()})"
             return

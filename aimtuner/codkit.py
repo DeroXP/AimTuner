@@ -115,7 +115,7 @@ TUNE = {
     # [observed in footage of the first beta weekend] the view follows a jumping target up
     # and down as readily as sideways. Whether the nerf touched this is not known.
     "rot_pitch_mw4": 1.0,
-    # -- "Coach": AimTuner's own rule set, no game's. Same reduced strength, but paid out
+    # -- "Coach": Core's own rule set, no game's. Same reduced strength, but paid out
     #    in proportion to the three habits that every game's assist rewards, so the HUD can
     #    show which one is missing. Do all three and you are at full strength under each of
     #    the other rule sets as well; that is the point of it. [all designed, none measured]
@@ -148,7 +148,7 @@ STYLES = {
     "bo7": ("BO7", "Black Ops 7"),
     "classic": ("MW3 / BO6", "MW3 / Black Ops 6"),
     "mw4": ("MW4 beta", "Modern Warfare 4 (beta)"),
-    "coach": ("Coach", "Coach (AimTuner's own)"),
+    "coach": ("Coach", "Coach (Core's own)"),
 }
 
 

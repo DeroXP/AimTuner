@@ -104,7 +104,7 @@ class IntegrityScreen(Screen):
                          "gap": "a run before this one is missing from the log"}.get(seal_state, seal_state))
         ui.para(x, y, "   ·   ".join(bits), "s", FAINT, w)
         ui.para(x, 900, "What is checked: where every mouse report and key came from; cheat, macro and debugging "
-                "programs running; code loaded into AimTuner; the game's clock; the window hidden from screen "
+                "programs running; code loaded into Core; the game's clock; the window hidden from screen "
                 "capture; and how the run was played, against how people play. It cannot see a cheat it has no "
                 "trace of - nothing on your own computer can be made impossible to fool - but it catches the "
                 "off-the-shelf ones.", "s", DIM, w)
@@ -121,6 +121,7 @@ class CheckCode(Screen):
         self.buf = ""
         self.body = None
         self.err = None
+        self.pc = None
 
     @property
     def text_mode(self):
@@ -144,17 +145,24 @@ class CheckCode(Screen):
                 self.buf += ch
         if "backspace" in app.keys and self.buf:
             self.buf = self.buf[:-1]
-            self.body = self.err = None
+            self.body = self.err = self.pc = None
         if "enter" in app.keys or "accept" in nav:
             self._read()
         if "esc" in app.keys or "back" in nav:
             app.pop()
 
     def _read(self):
-        self.body, self.err = seal.read_code(self.buf) if self.buf else (None, "paste a code first (Ctrl+V)")
+        self.pc = None
+        if not self.buf:
+            self.body, self.err = None, "paste a code first (Ctrl+V)"
+        elif self.buf.strip().startswith(seal.PC_PREFIX):
+            self.pc, self.err = seal.read_pc_code(self.buf)
+            self.body = None
+        else:
+            self.body, self.err = seal.read_code(self.buf)
 
     def draw(self, ui):
-        _header(ui, "CHECK A SHARE CODE", "a friend's run, as they shared it - and what the anti-cheat said about it")
+        _header(ui, "CHECK A CODE", "a friend's run or PC check, as they shared it - and what Core's anti-cheat said")
         x, w = 96.0, ui.W - 192
         ui.rect(x, 200, w, 56, (0.0, 0.0, 0.0, 0.5))
         ui.frame(x, 200, w, 56, ACCENT)
@@ -162,7 +170,9 @@ class CheckCode(Screen):
         caret = "|" if int(time.perf_counter() * 2) % 2 else ""
         ui.text(x + 16, 212, (shown or "paste the code here with Ctrl+V") + caret, "m", WHITE if shown else FAINT)
         y = 300
-        if self.err:
+        if getattr(self, "pc", None):
+            self._draw_pc(ui, x, w, y)
+        elif self.err:
             ui.text(x, y, "NOT VALID", "xl", BAD)
             ui.text(x, y + 74, self.err, "l", DIM)
         elif self.body:
@@ -185,7 +195,7 @@ class CheckCode(Screen):
             y += 20
             reasons = b.get("w") or []
             if b.get("u"):
-                reasons = ["made by a copy of AimTuner that is not the published build: its result cannot be vouched for"] + reasons
+                reasons = ["made by a copy of Core that is not the published build: its result cannot be vouched for"] + reasons
             if b.get("o"):
                 reasons = ["its player said it was them and counted it anyway"] + reasons
             for r in reasons[:5]:
@@ -195,14 +205,43 @@ class CheckCode(Screen):
             build += "  ·  PC check " + {"passed": "passed", "passed+admin": "passed (with admin rights)",
                                          "failed": "FAILED"}.get(pcs, "not run" if pcs.startswith("needed") or pcs == "none" else pcs)
             log = {"ok": "", "edited": "  ·  its log line had been EDITED", "stripped": "  ·  its log line's seal was removed"}.get(b.get("l"), "")
-            ui.text(x, max(y + 20, 840), f"made by AimTuner {b.get('a')}  ·  {build}  ·  settings {b.get('f')}{log}", "s", FAINT)
+            ui.text(x, max(y + 20, 840), f"made by Core {b.get('a')}  ·  {build}  ·  settings {b.get('f')}{log}", "s", FAINT)
             ui.text(x, max(y + 46, 866), "Same settings fingerprint as yours = the same difficulty: the scores compare directly.",
                     "s", FAINT)
         else:
-            ui.para(x, y, "On a run's results, C copies its share code. Your friend sends it to you; paste it here. "
-                    "A code that was changed after AimTuner made it - a better score typed in - is caught.",
+            ui.para(x, y, "On a run's results, C copies its share code. The Core PC check gives a code too. Your "
+                    "friend sends it to you; paste it here. A code changed after Core made it is caught.",
                     "m", DIM, w)
         _footer(ui, "Ctrl+V  paste        Enter  check        Esc  back")
+
+    def _draw_pc(self, ui, x, w, y):
+        b = self.pc
+        passed = b.get("v")
+        ui.text(x, y, "PC CHECK", "xl", WHITE)
+        ui.text(x + w, y + 14, "PASSED" if passed else "FAILED", "xl", GOOD if passed else BAD, 2)
+        ui.text(x, y + 74, f"Core {b.get('a')}  ·  {b.get('t')}  ·  "
+                + ("with admin rights" if b.get("e") else "without admin rights")
+                + (f"  ·  {b.get('s')} s" if b.get("s") is not None else ""), "m", DIM)
+        y += 130
+        finds = b.get("f") or []
+        if not finds:
+            ui.text(x, y, "Nothing found.", "l", GOOD)
+        for f in finds[:11]:
+            lvl, what = f[0], f[1]
+            kind, game = (f[3], f[4]) if len(f) >= 5 else ("", "")
+            c = BAD if lvl == "fail" else WARN
+            ui.text(x, y, "FAIL" if lvl == "fail" else "note", "m", c)
+            head = (kind.upper() + ("" if game in ("", "any game", None) else f"  ·  {game}")) if kind else ""
+            if head:
+                ui.text(x + 90, y, head, "m", c)
+                ui.text(x + 90 + ui.width(head, "m") + 20, y, what, "s", DIM)
+            else:
+                ui.text(x + 90, y, what, "m", WHITE)
+            y += 40
+        if b.get("u"):
+            ui.text(x, max(y + 20, 900), "made by a copy of Core that is not the published build: its result cannot be vouched for",
+                    "s", WARN)
+        ui.text(x, 940, f"looked at {len(b.get('c') or [])} sources on PC {b.get('m', '')}", "s", FAINT)
 
 
 class PCCheckScreen(Screen):
@@ -273,7 +312,7 @@ class PCCheckScreen(Screen):
         x, w = 96.0, ui.W - 192
         _header(ui, "PC CHECK", "a look at this PC for cheats, and for traces of hiding them")
         if self.state == "intro":
-            y = ui.para(x, 200, "Done once when AimTuner is installed or updated. If it passes, your runs can be verified; "
+            y = ui.para(x, 200, "Done once when Core is installed or updated. If it passes, your runs can be verified; "
                         "if it fails or is skipped, every run is unverified (you can still play and practise).", "l", WHITE, w) + 24
             y = ui.para(x, y, "It looks at: program history (UserAssist, MuiCache, BAM, Prefetch), installed programs, "
                         "services and drivers, mice and keyboards (by USB id), Desktop, Downloads, Documents and the "
@@ -296,7 +335,7 @@ class PCCheckScreen(Screen):
         r = self.res or {}
         ok = r.get("passed")
         ui.text(x, 196, "PASSED" if ok else "FAILED", "xl", GOOD if ok else BAD)
-        ui.text(x + 260, 214, f"{r.get('time', '')}  ·  AimTuner {r.get('app', '')}  ·  "
+        ui.text(x + 260, 214, f"{r.get('time', '')}  ·  Core {r.get('app', '')}  ·  "
                 + ("with admin rights" if r.get("elevated") else "without admin rights")
                 + (f"  ·  {r.get('seconds')} s" if r.get("seconds") is not None else ""), "m", DIM)
         y = 280
@@ -304,7 +343,7 @@ class PCCheckScreen(Screen):
             ui.text(x, y, self.note, "m", WARN)
             y += 36
         if r.get("failed_at_start"):
-            ui.text(x, y, f"Failed when AimTuner started on {r['failed_at_start']} - something was found since the check.", "m", BAD)
+            ui.text(x, y, f"Failed when Core started on {r['failed_at_start']} - something was found since the check.", "m", BAD)
             y += 36
         finds = r.get("findings") or []
         if not finds:

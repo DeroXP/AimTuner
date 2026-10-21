@@ -1,17 +1,17 @@
-"""The machine a run was played on: what else was running, what was loaded into AimTuner, and
+"""The machine a run was played on: what else was running, what was loaded into Core, and
 whether the game could be seen by anything but the screen. Windows only; read-only throughout -
-nothing here changes, closes or blocks anything except AimTuner's own window.
+nothing here changes, closes or blocks anything except Core's own window.
 
   tools         programs known to be aim cheats, recoil scripts / input remappers, or debuggers
                 and memory editors, running at the time (by process name)
-  modules       DLLs loaded into AimTuner that are neither Windows', AimTuner's own, nor a known
+  modules       DLLs loaded into Core that are neither Windows', Core's own, nor a known
                 graphics driver, overlay or antivirus - the way code gets into a game uninvited
-  debugger      a debugger attached to AimTuner
+  debugger      a debugger attached to Core
   input driver  the Interception filter driver (it lets a program make input that Windows reports
                 as coming from the real mouse - used by many hardware-emulating cheats)
   clock         the game's clock against two independent Windows clocks over the run: a
                 "speedhack" slows one down and not the others
-  capture       AimTuner's window hidden from screen capture during runs (SetWindowDisplayAffinity),
+  capture       Core's window hidden from screen capture during runs (SetWindowDisplayAffinity),
                 so a program reading the screen - an "AI" aimbot - sees black
 """
 from __future__ import annotations
@@ -144,7 +144,7 @@ def modules() -> list:
 
 
 def foreign_modules(paths=None) -> list:
-    """Loaded DLLs that are not Windows', not AimTuner's or Python's own, and not a known driver,
+    """Loaded DLLs that are not Windows', not Core's or Python's own, and not a known driver,
     overlay or antivirus (see KNOWN_MODULES)."""
     paths = modules() if paths is None else paths
     win = os.environ.get("SystemRoot", r"C:\Windows").lower()
@@ -246,7 +246,7 @@ class Clocks:
 
 
 def hide_from_capture(hwnd, on: bool) -> bool:
-    """Keep AimTuner's window out of screen captures (on) or let it be captured again (off).
+    """Keep Core's window out of screen captures (on) or let it be captured again (off).
     Returns True when Windows confirms the window is now excluded."""
     if sys.platform != "win32" or not hwnd:
         return False

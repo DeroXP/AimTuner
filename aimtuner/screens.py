@@ -123,7 +123,7 @@ class MainMenu(Screen):
     def draw(self, ui):
         app, cfg = self.app, self.app.cfg
         W = ui.W
-        _header(ui, "AIMTUNER", "aim benchmark and trainer  ·  controller, or mouse and keyboard")
+        _header(ui, "CORE", "aim benchmark and trainer  ·  controller, or mouse and keyboard")
         x, y, w = 96.0, 210.0, 560.0
         c = cfg["cod"]
         kbm = config.kind(cfg) == "kbm"
@@ -139,7 +139,7 @@ class MainMenu(Screen):
             "binds": ("Binds", _bind_text(cfg)),
             "settings": ("Settings", None),
             "compare": ("Compare controllers", _runs(len(app.log.runs))),
-            "check": ("Check a share code", "a friend's run"),
+            "check": ("Check a code", "a run or PC check"),
             "quit": ("Quit", None),
         }
         for i, kind in enumerate(self.ITEMS):
@@ -214,14 +214,14 @@ class MainMenu(Screen):
                          "real or just run-to-run noise.", "m", DIM, tw) + 20
             self._scoreboard(ui, tx, ty, tw)
         elif kind == "check":
-            ui.text(tx, ty, "Check a share code", "xl", WHITE)
+            ui.text(tx, ty, "Check a code", "xl", WHITE)
             n_flag = sum(1 for r in app.log.all if (r.get("integrity") or {}).get("status") == "flagged")
             bad = app.log.tampered()
             ui.para(tx, ty + 70, "Comparing with friends: on a run's results, C copies a share code - the result, "
                     "the settings fingerprint and what the anti-cheat said about the run. Paste a friend's here to "
-                    "see it; a code changed after AimTuner made it (a better score typed in) is caught.\n\n"
+                    "see it; a code changed after Core made it (a better score typed in) is caught.\n\n"
                     "The anti-cheat checks every run: where the input came from, what was running, code loaded into "
-                    "AimTuner, the game's clock, the window hidden from screen capture, and how the run was played. "
+                    "Core, the game's clock, the window hidden from screen capture, and how the run was played. "
                     "A flagged run is kept but not counted.\n\n"
                     f"Your log: {n_flag} flagged run{'s' if n_flag != 1 else ''}"
                     + (f", {len(bad)} line{'s' if len(bad) != 1 else ''} edited by hand (not counted)." if bad else "."),
@@ -1051,7 +1051,7 @@ _S = [
      "\"Auto\" (the default) caps one frame under the monitor's real refresh rate - 238 on a 239.99 Hz "
      "\"240 Hz\" screen, 178 on 179.9 Hz - so frames never queue up behind the display. If the NVIDIA "
      "driver has its own Max Frame Rate, Auto stays one under that too: the driver's limiter waits after "
-     "the input has been read (about 4 ms of lag at 240 Hz), AimTuner's waits before. \"Display\" caps "
+     "the input has been read (about 4 ms of lag at 240 Hz), Core's waits before. \"Display\" caps "
      "at the refresh rate itself. Uncapped just burns power - the scene already renders far faster than "
      "any display."),
     ("video.quality", "Graphics", "choice", ("high", "low"),
@@ -1062,11 +1062,11 @@ _S = [
     ("video.show_fps", "Performance overlay", "bool", None, "FPS, GPU time per frame and pad report rate."),
     ("#", "ANTI-CHEAT"),
     ("@pccheck", "PC check", "action", None,
-     "A look at this PC for cheats and for traces of hiding them, done when AimTuner is installed or "
+     "A look at this PC for cheats and for traces of hiding them, done when Core is installed or "
      "updated. Passed: runs can be verified. Failed or not run: every run is unverified. Nothing leaves "
      "your PC; only what matches the list of cheat names is kept. Open it to see the result or check again."),
     ("anticheat.hide_capture", "Hide runs from screen capture", "bool", None,
-     "While a run is live, AimTuner's window is left out of every screen capture, so a program that reads "
+     "While a run is live, Core's window is left out of every screen capture, so a program that reads "
      "the screen to aim (an \"AI\" aimbot) sees nothing. It also means OBS, Discord or the Xbox Game Bar "
      "cannot record the game while you play - turn it off to record, and runs made then are marked "
      "unverified. Menus and results can always be captured."),
@@ -1738,7 +1738,7 @@ class Results(Screen):
                 import glfw
 
                 glfw.set_clipboard_string(app.win, code)
-                app.toast("Share code copied - a friend pastes it into Check a share code", 4.0)
+                app.toast("Share code copied - a friend pastes it into Check a code", 4.0)
             except Exception:
                 app.toast("Could not reach the clipboard", 3.0)
         elif "v" in nav:

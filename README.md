@@ -1,4 +1,4 @@
-# AimTuner
+# Core
 
 An aim benchmark and trainer in a 3D arena, for a controller or for mouse and
 keyboard. Seven things in one program:
@@ -31,10 +31,13 @@ every track".
 
 ## Get it (Windows)
 
-1. Download **AimTuner.zip** from the [latest release](../../releases/latest).
-2. Unzip it anywhere (keep `AimTuner.exe` and the `_internal` folder together).
-3. Double-click `AimTuner.exe`. Windows may say it "protected your PC" because the
+1. Download **Core.zip** from the [latest release](../../releases/latest).
+2. Unzip it anywhere (keep `Core.exe` and the `_internal` folder together).
+3. Double-click `Core.exe`. Windows may say it "protected your PC" because the
    exe is not signed: **More info -> Run anyway**.
+
+(The release also has **Core-PC-Check.zip** - the PC check on its own, for
+checking a PC without installing Core. See "The PC check on its own" below.)
 
 No Python needed. It sets itself up for your PC on first launch: fullscreen at
 your desktop resolution, **Low graphics**, and a **frame cap one frame under your
@@ -51,14 +54,14 @@ last decade).
 
 ## Run it
 
-**AimTuner.exe** (or the AimTuner shortcut on the desktop) - fullscreen, no
+**Core.exe** (or the Core shortcut on the desktop) - fullscreen, no
 Python needed. It uses the `config.json` and `logs/` in this folder, the same
 ones as running from source. The `_internal` folder beside it holds its copy of
 Python and the libraries: the two go together, so move or copy them as a pair.
 
 ```
-AimTuner.exe            fullscreen at the desktop resolution / refresh rate
-build_exe.bat           rebuild AimTuner.exe after the code has changed (about 30 s)
+Core.exe            fullscreen at the desktop resolution / refresh rate
+build_exe.bat           rebuild Core.exe after the code has changed (about 30 s)
 run.bat                 the same game from source, with Python
 run.bat --windowed      in a window
 analyze.bat             print the controller comparison from the logs
@@ -299,7 +302,7 @@ which is 644 deg/s from the hip, 164 deg/s through the sights, and 330 deg/s per
   to reload here; past 30 bullets the gun keeps climbing and sways about where
   it ended.
 
-  ![The photographed spray next to three unheld 30-bullet sprays in AimTuner](docs/recoil_pattern.png)
+  ![The photographed spray next to three unheld 30-bullet sprays in Core](docs/recoil_pattern.png)
 - No hip-fire drills: bullets from the hip spread, and every scenario expects
   you to aim down sights (250 ms to raise them, as the real rifle).
 - Walk and strafe only (4.65 m/s, 2.95 m/s while aiming - the real rifle's
@@ -315,7 +318,7 @@ which is 644 deg/s from the hip, 164 deg/s through the sights, and 330 deg/s per
 Aim assist is a property of the **scenario**, never a setting: each one says
 *assist* or *no assist* in the list, several pairs are the same drill with and
 without it, and three exist to show you what takes it away. The only choice in
-Settings is *which rule set* it follows: one of three games', or AimTuner's own.
+Settings is *which rule set* it follows: one of three games', or Core's own.
 
 What is modelled:
 
@@ -335,7 +338,7 @@ earned and where it works:
 | **Black Ops 7** (default) | 75% of the rotation | all of it | fades in; full from about 12 m |
 | **MW3 / Black Ops 6** | all of it | all of it | fades in; full from about 6 m |
 | **Modern Warfare 4 (beta)** | almost none (15%) | all of it | no fade: full from point blank |
-| **Coach** (AimTuner's own) | half | 65% - all of it only while strafing as well | fades in; full from about 6 m |
+| **Coach** (Core's own) | half | 65% - all of it only while strafing as well | fades in; full from about 6 m |
 
 **Coach** copies no game. It is there to teach the mechanic rather than imitate
 one title: rotation is paid out for three habits at once - the right stick
@@ -885,7 +888,7 @@ Blocks add up across days for as long as the settings fingerprint stays the same
 ## Fair comparisons
 
 Aim scores move 5-10% from one run to the next on the *same* controller, so one
-good run proves nothing. AimTuner is built around that:
+good run proves nothing. Core is built around that:
 
 - **Alternate pads** (A, B, B, A ...) after a warm-up. You improve as you play;
   if you do all of pad A and then all of pad B, B gets the credit for your warm-up.
@@ -1000,33 +1003,33 @@ report rate, and every run log stores its own frame-rate statistics.
 ### Frame pacing
 
 Every frame should start exactly on its slot, and the wait should happen
-*before* the input is read, not after. What AimTuner does for that:
+*before* the input is read, not after. What Core does for that:
 
 - **The limiter adapts.** It sleeps until shortly before the slot and spins the
   rest. The margin follows the latest of the last few hundred wake-ups on your
   machine, so it is as short as Windows allows there, and never so short that a
   frame starts late.
 - **Game scheduling.** The render thread joins Windows' "Games" multimedia class
-  (MMCSS), and AimTuner opts out of power throttling ("EcoQoS"), which on a CPU
+  (MMCSS), and Core opts out of power throttling ("EcoQoS"), which on a CPU
   with performance and efficiency cores keeps the render thread off the slow
   cores and waking on time.
 - **Not two limiters.** If the NVIDIA driver has its own *Max Frame Rate* (for
-  every game, or for AimTuner.exe - read from the driver, never changed), the
+  every game, or for Core.exe - read from the driver, never changed), the
   Auto frame cap stays one frame under it. Otherwise both limiters pace the same
-  frames, and the driver's waits inside the buffer swap *after* AimTuner has read
+  frames, and the driver's waits inside the buffer swap *after* Core has read
   the input: measured here with a global 238 fps cap, the swap held every frame
   for 3.9 ms - about 4 ms of input lag, and frames up to 0.2 ms off their slot.
   At 237 the swap returns in 0.02 ms and frames land within 0.05 ms of their slot
   at the 99th percentile (`python tools/frametest.py` measures it on your screen).
 
 What is left over is the display path. On this machine Windows composites
-AimTuner's OpenGL window rather than flipping it straight to the screen (no
+Core's OpenGL window rather than flipping it straight to the screen (no
 G-Sync, no tearing), so about one frame in eighty waits for the next refresh -
 a 3 Hz beat between 237 fps and 240 Hz. With an NVIDIA card,
-**NVIDIA Control Panel > Manage 3D settings > Program settings > AimTuner.exe >
+**NVIDIA Control Panel > Manage 3D settings > Program settings > Core.exe >
 Vulkan/OpenGL present method: Prefer layered on DXGI Swapchain** gives it the
 same direct path (and G-Sync) a DirectX game gets; setting *Max Frame Rate* to
-Off for AimTuner.exe there too lets Auto go back to one under your refresh.
+Off for Core.exe there too lets Auto go back to one under your refresh.
 
 ## Anti-cheat
 
@@ -1035,7 +1038,7 @@ Every run gets a verdict, shown under its results and kept in its log line:
 - **Verified** - nothing found, and everything that can be checked was checked.
 - **Unverified** - nothing that proves cheating, but something stops the run
   being vouched for: a macro tool or debugger running, an unknown DLL loaded into
-  AimTuner, screen-capture protection off, not the published build, or a run too
+  Core, screen-capture protection off, not the published build, or a run too
   short to judge.
 - **Flagged** - evidence of cheating. A flagged run is kept and shown, with its
   reasons, but not counted in bests, averages, Progress or comparisons. If it was
@@ -1047,10 +1050,10 @@ Every run gets a verdict, shown under its results and kept in its log line:
 |---|---|
 | **Where the input came from** | Mouse movement, clicks or bound keys made by software (SendInput, AutoHotkey, most scripts and aimbots: Windows reports them with no device behind them), and two devices moving the aim at once (an input box, a second mouse) |
 | **What is running** | Known aim cheats (Aimmy and the like, Cronus Zen Studio, XIM managers, KMBox tools) flag the run; macro tools that can run recoil scripts (AutoHotkey, reWASD, macro recorders) and debuggers or memory editors (Cheat Engine, x64dbg) make it unverified |
-| **What is loaded into AimTuner** | DLLs that are not Windows', AimTuner's, a graphics driver, an overlay or an antivirus; a debugger attached; the Interception input driver installed |
+| **What is loaded into Core** | DLLs that are not Windows', Core's, a graphics driver, an overlay or an antivirus; a debugger attached; the Interception input driver installed |
 | **The clock** | The game's clock against two other Windows clocks over the run - a speed hack slows one of them |
 | **Screen capture** | During a run the window is hidden from every screen capture, so a program that reads the screen to aim (an "AI" aimbot) sees nothing. It also hides the game from OBS and recorders; **Settings > Anti-cheat** turns it off (runs are then unverified) |
-| **The build** | The published AimTuner.zip is signed (Ed25519): at start-up every file is hashed and checked against the signed list. A changed file makes every run flagged |
+| **The build** | The published Core.zip is signed (Ed25519): at start-up every file is hashed and checked against the signed list. A changed file makes every run flagged |
 | **The log** | Every line of `runs.jsonl` is sealed (HMAC) and chained to the one before: a score edited by hand is not counted, and a deleted run shows as a gap |
 | **How it was played** | From the run's capture, against how people play - below |
 
@@ -1081,7 +1084,7 @@ unverified on static drills. `tests/check_anticheat.py` replays all of it.
 
 ### The PC check
 
-When AimTuner is installed or updated it offers a **PC check**: a few seconds'
+When Core is installed or updated it offers a **PC check**: a few seconds'
 look at the computer for cheats and for traces of hiding them, in the spirit of
 the "PC checks" competitive communities run by hand or with forensic scanners
 such as detect.ac or Echo. **Passed: runs can be verified. Failed or skipped:
@@ -1110,8 +1113,23 @@ names. The verdict is sealed and tied to this PC and this version: copied from
 another PC, or edited, it is refused.
 
 The quick part of the check (program history, devices, running programs - well
-under a tenth of a second) runs again **every time AimTuner starts and at the end
+under a tenth of a second) runs again **every time Core starts and at the end
 of every run**, so a cheat installed or started after a passed check fails it.
+
+Every finding is labelled with the most likely kind of cheat (aimbot, wallhack /
+ESP, recoil macro, cheat loader, anti-cheat bypass, input device, macro tool,
+hiding traces...) and the game it is for (Siege, Call of Duty, or game unknown).
+
+### The PC check on its own
+
+The PC check is also a small program of its own, **Core PC Check.exe**, so it can
+be used without Core - to check a friend's PC, or your own. It is the same check,
+in a little window: it passes or fails, labels what it finds, and gives a
+**result code** and a saved **HTML report** to show others. The code pastes into
+Core (or the PC check app) under *Check a code* to see a genuine, unedited
+result. If the PC check app sits next to a Core install, a pass there also spares
+Core its own check. It carries none of the game (no OpenGL, no numpy), so it is a
+small, fast download.
 
 ### Cat and mouse
 
@@ -1120,7 +1138,7 @@ hole found was closed (the tests replay every one):
 
 | Hole | Closed by |
 |---|---|
-| AimTuner's source is public, so the keys sealing logs, share codes and PC-check results were public: anyone could forge them | The published build seals with its own secret, added at build time and never in the source. A copy run from source seals with a development key, and its share codes say "not the published build" |
+| Core's source is public, so the keys sealing logs, share codes and PC-check results were public: anyone could forge them | The published build seals with its own secret, added at build time and never in the source. A copy run from source seals with a development key, and its share codes say "not the published build" |
 | The PC check runs once: a cheat installed afterwards would never be seen | Its quick part runs at every start and the end of every run |
 | Hiding the window from screen capture does not stop a hook that copies the game's frames from inside it (OBS game capture) - a frame source for a screen-reading aimbot | A capture hook loaded during a protected run makes it unverified |
 | A passed PC-check result copied from another PC, edited from failed to passed, or a forged result from the admin check | Each is sealed and tied to the PC and the version; any of them is refused |
@@ -1134,12 +1152,12 @@ the program apart can get round any client-side check.
 
 **Comparing with friends.** On a run's results, **C** copies a share code: the
 result, the settings fingerprint, the build and the verdict. A friend pastes it
-into **Check a share code** on the main menu. A code changed after AimTuner made
+into **Check a share code** on the main menu. A code changed after Core made
 it - a better score typed in - is refused. Codes with the same settings
 fingerprint were played at the same difficulty.
 
 What it cannot do: everything here runs on the player's own computer, so someone
-who takes AimTuner apart can get round any of it (the keys that seal logs and
+who takes Core apart can get round any of it (the keys that seal logs and
 codes are inside it). A cheat that leaves no trace - a hardware box that
 passes itself off as the mouse, used with a slow, careful "humanized" aim on
 static targets - can pass. It stops the off-the-shelf ways, and makes the rest work.
@@ -1210,7 +1228,7 @@ static targets - can pass. It stops the off-the-shelf ways, and makes the rest w
 ```
 app.py                launcher / CLI
 analyze.py            log analysis
-build_exe.py          builds AimTuner.exe + _internal/ with PyInstaller (build_exe.bat runs it)
+build_exe.py          builds Core.exe + _internal/ with PyInstaller (build_exe.bat runs it)
 aimtuner/
   app.py              window, main loop, frame pacing
   gfx.py              renderer (font atlas, UI batch, world pass)
@@ -1237,7 +1255,7 @@ aimtuner/
   screens.py          menus
   uikit.py            shared menu widgets
   sound.py            synthesized feedback sounds
-  icon.py             the crosshair icon (window, taskbar, AimTuner.exe)
+  icon.py             the crosshair icon (window, taskbar, Core.exe)
   capture.py          records a run frame by frame (view, inputs, body, targets, what was drawn) for replays
   ghost.py            the ghost: the run's targets replayed at its pace, and a strong human's aim through the game's code
   engage.py           where each target's time went (reaction, first movement, corrections, shot, kill), you vs the ghost

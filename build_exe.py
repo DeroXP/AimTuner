@@ -1,4 +1,4 @@
-"""Build AimTuner.exe: no console window, the crosshair icon.
+"""Build Core.exe: no console window, the crosshair icon.
 
     python build_exe.py            (or double-click build_exe.bat)
 
@@ -22,18 +22,18 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.path.join(tempfile.gettempdir(), "aimtuner-build")
-NAME = "AimTuner"
+NAME = "Core"
 # what Explorer shows under Properties > Details
 VERSION_INFO = """VSVersionInfo(
   ffi=FixedFileInfo(filevers={n}, prodvers={n}, mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1,
                     subtype=0x0, date=(0, 0)),
   kids=[
     StringFileInfo([StringTable('040904B0', [
-      StringStruct('FileDescription', 'AimTuner - aim trainer and benchmark'),
+      StringStruct('FileDescription', 'Core - aim trainer and benchmark'),
       StringStruct('FileVersion', '{v}'),
-      StringStruct('ProductName', 'AimTuner'),
+      StringStruct('ProductName', 'Core'),
       StringStruct('ProductVersion', '{v}'),
-      StringStruct('OriginalFilename', 'AimTuner.exe')])]),
+      StringStruct('OriginalFilename', 'Core.exe')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
 )
@@ -41,7 +41,7 @@ VERSION_INFO = """VSVersionInfo(
 
 
 # The publisher's signing key (Ed25519 seed, hex). It lives here, outside the project folder and
-# out of OneDrive and git: whoever holds it can make a build AimTuner calls "official".
+# out of OneDrive and git: whoever holds it can make a build Core calls "official".
 KEY = os.path.join(os.path.expanduser("~"), ".aimtuner-signing", "ed25519.key")
 
 
@@ -136,11 +136,87 @@ def main() -> int:
         shutil.copytree(os.path.join(built, "_internal"), internal)
         shutil.copy2(os.path.join(built, NAME + ".exe"), exe)
     except PermissionError:
-        print(f"\n{exe} is in use - close AimTuner and build again.")
+        print(f"\n{exe} is in use - close Core and build again.")
         return 1
     files = [os.path.join(d, f) for d, _, fs in os.walk(internal) for f in fs]
     mb = (os.path.getsize(exe) + sum(os.path.getsize(f) for f in files)) / 1e6
     print(f"\nDone in {time.perf_counter() - t0:.0f} s: {exe} (+ _internal, {len(files)} files, {mb:.0f} MB together)")
+    if "--no-pccheck" not in sys.argv:
+        build_pccheck(ico, ver)
+    return 0
+
+
+def extract_tcl():
+    """Unzip Python 3.14's Tcl/Tk script libraries (libtcl*.zip, libtk*.zip) next to the build, so
+    the frozen PC check can set TCL_LIBRARY/TK_LIBRARY to real folders. Returns the folder holding
+    tcl_library/ and tk_library/, or None (older Pythons keep these on disk already)."""
+    import glob
+    import zipfile
+
+    tcl_dir = os.path.join(os.path.dirname(sys.executable), "tcl")
+    zips = glob.glob(os.path.join(tcl_dir, "libtcl*.zip")) + glob.glob(os.path.join(tcl_dir, "libtk*.zip"))
+    if not zips:
+        return None
+    out = os.path.join(WORK, "tcl_data")
+    if os.path.isdir(out):
+        shutil.rmtree(out)
+    os.makedirs(out)
+    for z in zips:
+        with zipfile.ZipFile(z) as zf:
+            zf.extractall(out)
+    if os.path.isdir(os.path.join(out, "tcl_library")) and os.path.isdir(os.path.join(out, "tk_library")):
+        return out
+    return None
+
+
+def build_pccheck(ico: str, ver: str) -> int:
+    """The standalone PC check (Core PC Check.exe): aimtuner.ac only, with Tkinter, no game, no
+    numpy/OpenGL/glfw. Lands in the pccheck/ folder beside Core, as its own small app."""
+    from aimtuner import __version__
+
+    out_dir = os.path.join(HERE, "pccheck")
+    dist = os.path.join(WORK, "dist_pc")
+    name = "Core PC Check"
+    running = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {name}.exe"], capture_output=True, text=True).stdout
+    if f"{name}.exe" in running:
+        print(f"{name}.exe is running - close it to rebuild it.")
+        return 1
+    tcl_data = extract_tcl()                 # Python 3.14 hides the Tcl library in the DLL; ship it unzipped
+    args = [
+        sys.executable, "-m", "PyInstaller", os.path.join(HERE, "pccheck_main.py"),
+        "--name", name, "--onedir", "--windowed", "--icon", ico, "--version-file", ver,
+        "--noconfirm", "--clean", "--log-level", "WARN",
+        "--distpath", dist, "--workpath", os.path.join(WORK, "work_pc"), "--specpath", WORK, "--paths", HERE,
+        # everything the game needs and the check does not
+        "--exclude-module", "numpy", "--exclude-module", "OpenGL", "--exclude-module", "glfw",
+        "--exclude-module", "PIL", "--exclude-module", "unittest", "--exclude-module", "pydoc",
+    ]
+    if tcl_data:
+        for sub in ("tcl_library", "tk_library"):
+            args += ["--add-data", os.path.join(tcl_data, sub) + os.pathsep + os.path.join("_tcl_data", sub)]
+    print(f"Building {name}.exe {__version__} (standalone PC check)...")
+    t0 = time.perf_counter()
+    secret = write_secret()
+    try:
+        subprocess.check_call(args, cwd=WORK)
+    finally:
+        if secret and os.path.exists(secret):
+            os.remove(secret)
+    built = os.path.join(dist, name)
+    print("  signed." if sign(built) else "  not signed (no key): it will call itself unofficial.")
+    try:
+        if os.path.isdir(out_dir):
+            if not os.path.exists(os.path.join(out_dir, "_internal", "base_library.zip")):
+                print(f"\n{out_dir} is not a PyInstaller folder - not touching it.")
+                return 1
+            shutil.rmtree(out_dir)
+        shutil.copytree(built, out_dir)
+    except PermissionError:
+        print(f"\n{out_dir} is in use.")
+        return 1
+    files = [os.path.join(d, f) for d, _, fs in os.walk(out_dir) for f in fs]
+    mb = sum(os.path.getsize(f) for f in files) / 1e6
+    print(f"Done in {time.perf_counter() - t0:.0f} s: {os.path.join(out_dir, name + '.exe')} ({len(files)} files, {mb:.0f} MB)")
     return 0
 
 

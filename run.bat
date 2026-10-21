@@ -1,5 +1,5 @@
 @echo off
-REM Launch AimTuner fullscreen. Any arguments are passed through and keep the
+REM Launch Core fullscreen. Any arguments are passed through and keep the
 REM console open, e.g.:  run.bat --windowed     run.bat --bench
 cd /d "%~dp0"
 

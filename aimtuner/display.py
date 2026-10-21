@@ -80,13 +80,13 @@ def cap_under(hz_exact: float | None, hz_whole: int) -> int:
 
 def driver_cap(exe: str | None = None) -> int | None:
     """The NVIDIA driver's own "Max Frame Rate" for this program - its own profile in the NVIDIA
-    Control Panel if it has one (exe: e.g. "AimTuner.exe"), else the global one - or None if
+    Control Panel if it has one (exe: e.g. "Core.exe"), else the global one - or None if
     there is none or this is not an NVIDIA card. Read only - nothing in the driver is changed.
 
     When the driver caps too, its limiter and ours pace the same frames. The driver's waits
-    inside the buffer swap - after AimTuner has read the input and drawn the frame - so every
+    inside the buffer swap - after Core has read the input and drawn the frame - so every
     frame shows input one wait older (about 4 ms at 240 Hz). Pacing a frame under the driver's
-    cap keeps the waiting in AimTuner's limiter, before the input is read."""
+    cap keeps the waiting in Core's limiter, before the input is read."""
     if sys.platform != "win32":
         return None
     try:

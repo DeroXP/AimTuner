@@ -25,7 +25,7 @@ from .screens import Controllers, MainMenu, Results
 from .sound import Sound
 from .theme import ACCENT, FAINT
 
-TITLE = "AimTuner"
+TITLE = "Core"
 
 _KEYS = {
     glfw.KEY_UP: "up", glfw.KEY_DOWN: "down", glfw.KEY_LEFT: "left", glfw.KEY_RIGHT: "right",
@@ -110,7 +110,7 @@ class App:
         self.fps = 0.0
         self.cpu_ms = 0.0
         self.t_start = self.now = time.perf_counter()
-        # the PC check (ac/pccheck.py): its verdict for this PC and this version of AimTuner
+        # the PC check (ac/pccheck.py): its verdict for this PC and this version of Core
         self.pc_path = os.path.join(os.path.dirname(os.path.abspath(opts.config or config.CONFIG_PATH)), "pccheck.json")
         self.pc_status, self.pc_record = "needed", None
         self.build_state = "checking"  # ac/seal.py: official / modified / source, worked out in the background
@@ -140,7 +140,7 @@ class App:
         self.screens.append(MainMenu(self))
         if not self.offscreen:
             self._pc_start()
-        print(f"AimTuner {__version__}  |  {self.gfx.info['renderer']}  |  GL {self.gfx.info['version']}"
+        print(f"Core {__version__}  |  {self.gfx.info['renderer']}  |  GL {self.gfx.info['version']}"
               f"  |  {self.gfx.w}x{self.gfx.h} @ {self.refresh} Hz")
         print(f"settings {opts.config or config.CONFIG_PATH}  |  logs {self.log.dir}")
 
@@ -704,7 +704,7 @@ class App:
             acc_n += 1
             acc_cpu += t_work - now
             if probe is not None and now - self.t_start > 1.0:
-                probe.append((raw_dt, t_work - now))
+                probe.append((raw_dt, t_work - now, now - self.t_start))
             if now - acc_t >= 0.5:
                 self.fps = acc_n / (now - acc_t)
                 self.cpu_ms = acc_cpu / acc_n * 1000.0
@@ -720,6 +720,8 @@ class App:
                   f"raw mouse {'ok' if self.mouse.available and self.mouse.thread and self.mouse.thread.ok else self.mouse.error or 'off'}"
                   f" ({self.mouse.reports} reports, {self.mouse.hz and round(self.mouse.hz)} Hz)  "
                   f"fullscreen {self.fullscreen}  {self.gfx.w}x{self.gfx.h}  build {self.build_state}")
+            slow = sorted(probe, key=lambda p: -p[0])[:8]       # the worst frames, and when they came
+            print("worst frames: " + "  ".join(f"{p[0] * 1000:.1f} ms @ {p[2]:.2f} s" for p in sorted(slow, key=lambda p: p[2])))
         self.close()
 
     def close(self):

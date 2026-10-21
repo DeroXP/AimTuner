@@ -1,10 +1,10 @@
-"""The PC check: a one-off forensic look at the computer, when AimTuner is installed or updated.
+"""The PC check: a one-off forensic look at the computer, when Core is installed or updated.
 
 Like the "PC checks" competitive communities run (and tools such as detect.ac sell), it looks for
 two things: traces of cheats, and traces of someone hiding traces. It passes or fails:
   pass   runs can be verified (each run still has its own checks - ac/__init__.py)
   fail   every run is unverified until a check passes
-The verdict is kept, sealed, beside config.json (pccheck.json). It is redone when AimTuner is
+The verdict is kept, sealed, beside config.json (pccheck.json). It is redone when Core is
 updated, and a quick part of it (program history, devices, running programs) is redone at every
 start - a cheat installed after a passed check fails it then.
 
@@ -435,7 +435,7 @@ class Scan:
                 if d.count(os.sep) - base_depth >= 3:
                     dirs[:] = []
                 dirs[:] = [x for x in dirs if x not in skip and not x.startswith(".")
-                           and os.path.normcase(os.path.join(d, x)) != own]          # (AimTuner's own folder: its tests)
+                           and os.path.normcase(os.path.join(d, x)) != own]          # (Core's own folder: its tests)
                 for f in fs:
                     n += 1
                     low = f.lower()
@@ -819,7 +819,7 @@ def status(path: str, app_version: str) -> tuple:
 
 # ------------------------------------------------------------------------------- admin rights
 def run_elevated(out_path: str, timeout: float = 120.0) -> bool:
-    """Run the check in a copy of AimTuner that Windows starts with admin rights (it asks the
+    """Run the check in a copy of Core that Windows starts with admin rights (it asks the
     user). True when that copy wrote its result; False if the user said no."""
     if getattr(sys, "frozen", False):
         exe, args = sys.executable, f'--pccheck "{out_path}"'
@@ -855,7 +855,7 @@ def run_elevated(out_path: str, timeout: float = 120.0) -> bool:
 
 
 def elevated_main(out_path: str) -> int:
-    """`AimTuner.exe --pccheck OUT` (started with admin rights by run_elevated)."""
+    """`Core.exe --pccheck OUT` (started with admin rights by run_elevated)."""
     admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
     res = Scan(elevated=admin).run()
     res["mac_child"] = _mac(res)

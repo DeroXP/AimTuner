@@ -1,7 +1,7 @@
 """The app's icon, drawn rather than shipped: a crosshair on a dark tile, in the accent colour.
 
 app.py gives it to the window (so the taskbar shows it), and build_exe.py writes it out as
-assets/icon.ico for AimTuner.exe.
+assets/icon.ico for Core.exe.
 """
 from __future__ import annotations
 

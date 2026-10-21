@@ -15,7 +15,7 @@ import sys
 import time
 
 # Where config.json, logs/ and the generated sounds live: the project folder - or, for the
-# built AimTuner.exe, the folder the exe sits in (its code is unpacked somewhere temporary).
+# built Core.exe, the folder the exe sits in (its code is unpacked somewhere temporary).
 ROOT = (os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, "frozen", False)
         else os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CONFIG_PATH = os.path.join(ROOT, "config.json")

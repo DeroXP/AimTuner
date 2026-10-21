@@ -2,7 +2,7 @@
 
   verified    nothing found, and everything that can be checked was checked
   unverified  nothing that proves cheating, but something stops the run being vouched for: a
-              macro tool or debugger running, an unknown DLL loaded into AimTuner, screen-capture
+              macro tool or debugger running, an unknown DLL loaded into Core, screen-capture
               protection off, a build that is not the published one, too little to judge by
   flagged     evidence of cheating: input made up by software or from a second device, a cheat
               program running, the game's clock tampered with, or play no hand produces (behavior.py)
@@ -24,7 +24,7 @@ from __future__ import annotations
 import threading
 import time
 
-from . import behavior, system
+from . import system      # (behavior - numpy, the game - is loaded only to judge a run: the PC check app has none of it)
 
 LEVELS = ("verified", "unverified", "flagged")
 
@@ -100,7 +100,7 @@ class RunGuard:
                     f"{name} was running" + (" (it can run recoil scripts and remap input)" if kind == "macro" else ""))
             mods = sorted(set((self.sys0 or {}).get("foreign_modules", []) + sys1["foreign_modules"]))
             if mods:
-                doubts.append("unknown code loaded into AimTuner: " + ", ".join(m.split("\\")[-1] for m in mods[:4]))
+                doubts.append("unknown code loaded into Core: " + ", ".join(m.split("\\")[-1] for m in mods[:4]))
                 out["modules"] = mods[:12]
             if sys1["debugger"] or (self.sys0 or {}).get("debugger"):
                 doubts.append("a debugger was attached")
@@ -119,7 +119,7 @@ class RunGuard:
             if hooks and hide:
                 doubts.append("a game-capture hook (OBS) was copying the game's frames, which screen-capture "
                               "protection cannot stop: " + ", ".join(h.split("\\")[-1] for h in hooks[:3]))
-            # the quick part of the PC check again: a cheat started or installed since AimTuner started
+            # the quick part of the PC check again: a cheat started or installed since Core started
             pc = getattr(app, "pc_status", "needed")
             if pc == "passed":
                 from . import pccheck
@@ -136,7 +136,7 @@ class RunGuard:
             elif self.hide_failed:
                 doubts.append("Windows would not hide the game from screen capture")
             if out["build"] == "modified":
-                flags.append("AimTuner's own files have been changed since it was published")
+                flags.append("Core's own files have been changed since it was published")
             elif out["build"] != "official":
                 doubts.append("not the published build (run from source, or built locally)")
             out["pc_check"] = pc
@@ -158,6 +158,8 @@ class RunGuard:
 
     def _analyse(self, cap):
         try:
+            from . import behavior
+
             self.result = behavior.analyse(cap)
         except Exception as e:
             self.result = {"detectors": {}, "notes": [f"analysis failed: {type(e).__name__}: {e}"]}
