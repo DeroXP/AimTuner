@@ -170,6 +170,16 @@ def foreign_modules(paths=None) -> list:
     return out
 
 
+# Hooks that copy the game's own frames from inside it (OBS's "game capture"). Hiding the window
+# from screen capture does not stop these - and a frame source is all a screen-reading aimbot needs.
+CAPTURE_HOOKS = ("graphics-hook", "obs-vulkan", "obs-opengl")
+
+
+def capture_hooks(paths=None) -> list:
+    paths = modules() if paths is None else paths
+    return [p for p in paths if any(h in os.path.basename(p).lower() for h in CAPTURE_HOOKS)]
+
+
 def debugger() -> bool:
     if sys.platform != "win32":
         return False
@@ -254,5 +264,6 @@ def hide_from_capture(hwnd, on: bool) -> bool:
 
 def snapshot() -> dict:
     """Everything above that is read at a point in time (the start and the end of a run)."""
-    return {"tools": tools_running(), "foreign_modules": foreign_modules(), "debugger": debugger(),
-            "interception": interception_driver()}
+    mods = modules()
+    return {"tools": tools_running(), "foreign_modules": foreign_modules(mods), "debugger": debugger(),
+            "interception": interception_driver(), "capture_hooks": capture_hooks(mods)}

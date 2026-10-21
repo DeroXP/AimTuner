@@ -1079,6 +1079,58 @@ pull on a mouse (~4.5°/s at 30 cm per turn) and a 0.15 stick offset on a pad;
 the humanized aimbot is flagged wherever a target moves and only marked
 unverified on static drills. `tests/check_anticheat.py` replays all of it.
 
+### The PC check
+
+When AimTuner is installed or updated it offers a **PC check**: a few seconds'
+look at the computer for cheats and for traces of hiding them, in the spirit of
+the "PC checks" competitive communities run by hand or with forensic scanners
+such as detect.ac or Echo. **Passed: runs can be verified. Failed or skipped:
+every run is unverified** (you can still play and practise). Settings >
+Anti-cheat > PC check shows the result and runs it again.
+
+| Where it looks | For |
+|---|---|
+| Program history (UserAssist, MuiCache, the Compatibility Assistant, Windows 11's PCA launch log, ShimCache, jump lists, Explorer's Run box / typed paths / open-save / search lists; with admin rights BAM and Prefetch) | cheats, loaders, spoofers and cleaners that have been run, even if deleted since |
+| Call of Duty and Siege by name | wallhacks, ESP, chams, silent aim, "unlock all" tools, recoil macros named for either game, and bypasses for their anti-cheats (Ricochet; BattlEye and Mousetrap) - tested against 740,000 file names on a real gaming PC with both games installed, none matched |
+| Windows Defender (admin rights) | a cheat folder excluded from scanning; a game cheat Defender caught, even if deleted since |
+| Every file name on drive C: (admin rights) | read from the drive's file table, like the "Everything" search checkers use - no folder too deep or hidden |
+| Installed programs, services and drivers | the same, installed |
+| Mice and keyboards now, every USB device ever connected | a microcontroller board (Arduino, Teensy, Pro Micro) acting as a mouse; Cronus adapters; input-box bridges |
+| Desktop, Downloads, Documents, the temp folder | cheat-named files, Cronus scripts (.gpc), AutoHotkey and Lua scripts that move the mouse while firing |
+| Logitech G HUB | Lua scripts that move the mouse while firing (the usual home of a mouse recoil script) |
+| Folders opened (ShellBags), the recycle bin | cheat folders opened or deleted |
+| Python installs | screen grabbing + object detection + mouse control together: the parts of an "AI" aimbot |
+| Hiding traces | the system clock set back (to make traces look old), Prefetch switched off in the registry, Windows freshly reinstalled (a note), event logs cleared, the drive's change journal deleted and remade, the logging services switched off (just before the check - SysMain or PcaSvc off for months only means less to check), program history wiped, cleaning commands in the PowerShell history; with admin rights, recently deleted files by name and the security log |
+
+Windows asks for admin rights when the check starts; without them it checks the
+rest, and the run records and share codes say which. Private: nothing is sent
+anywhere, and nothing is kept except what matched the list of cheat and bypass
+names. The verdict is sealed and tied to this PC and this version: copied from
+another PC, or edited, it is refused.
+
+The quick part of the check (program history, devices, running programs - well
+under a tenth of a second) runs again **every time AimTuner starts and at the end
+of every run**, so a cheat installed or started after a passed check fails it.
+
+### Cat and mouse
+
+Before release the anti-cheat was attacked the way a cheater would, and each
+hole found was closed (the tests replay every one):
+
+| Hole | Closed by |
+|---|---|
+| AimTuner's source is public, so the keys sealing logs, share codes and PC-check results were public: anyone could forge them | The published build seals with its own secret, added at build time and never in the source. A copy run from source seals with a development key, and its share codes say "not the published build" |
+| The PC check runs once: a cheat installed afterwards would never be seen | Its quick part runs at every start and the end of every run |
+| Hiding the window from screen capture does not stop a hook that copies the game's frames from inside it (OBS game capture) - a frame source for a screen-reading aimbot | A capture hook loaded during a protected run makes it unverified |
+| A passed PC-check result copied from another PC, edited from failed to passed, or a forged result from the admin check | Each is sealed and tied to the PC and the version; any of them is refused |
+| Turning down admin rights to give the check less to see | Allowed, but every run and share code says the check had no admin rights |
+| Clearing traces before the check | Clearing is itself a trace: cleared logs, a new change journal, services switched off just before, wiped history and cleaning commands all fail the check |
+
+Still open, and said plainly: a cheat renamed to something innocent is not known
+by its name (the behaviour checks still apply in every run); a hardware input box
+that passes itself off as the mouse leaves nothing on the PC; and anyone who takes
+the program apart can get round any client-side check.
+
 **Comparing with friends.** On a run's results, **C** copies a share code: the
 result, the settings fingerprint, the build and the verdict. A friend pastes it
 into **Check a share code** on the main menu. A code changed after AimTuner made

@@ -24,7 +24,23 @@ import zlib
 _K = (b"AimTuner", b"\x9a\x1f\x52\xe3\x07\xbd\x44\x6c", b"seal-v1", b"\x5c\xe1\x88\x2d\x3a\x90\xf7\x11")
 
 
-def _key(purpose: bytes) -> bytes:
+# The published build's own secret: written into the build by build_exe.py from a file on the
+# publisher's computer, and never into the source - AimTuner's source is public, so a key in it
+# would let anyone forge a seal. A copy run from source has only the development key above, and
+# its seals and share codes say so.
+try:
+    from ._secret import SECRET as _OFFICIAL
+except ImportError:
+    _OFFICIAL = None
+OFFICIAL = _OFFICIAL is not None
+
+
+def _key(purpose: bytes, which: str = "own") -> bytes | None:
+    """"own": this copy's key (the published one, or the development one); "dev"; "official"."""
+    if which == "official" or (which == "own" and OFFICIAL):
+        if _OFFICIAL is None:
+            return None
+        return hashlib.sha256(_OFFICIAL + b"|" + purpose).digest()
     return hashlib.sha256(b"|".join(_K) + b"|" + purpose).digest()
 
 
@@ -103,7 +119,8 @@ def share_code(rec: dict) -> str:
         "m": {k: v for k, v in st.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
         "v": i.get("status", "none"), "b": i.get("build"), "o": bool(i.get("override")),
         "w": (i.get("flags") or []) + (i.get("doubts") or []), "e": bool(rec.get("endless")),
-        "l": rec.get("_seal", "ok"),
+        "l": rec.get("_seal", "ok"), "u": not OFFICIAL,
+        "p": (i.get("pc_check") or "none") + ("+admin" if i.get("pc_check_admin") else ""),
     }
     raw = zlib.compress(json.dumps(body, separators=(",", ":"), default=str).encode("utf-8"), 9)
     mac = hmac.new(_key(b"share"), raw, hashlib.sha256).digest()[:12]
@@ -123,12 +140,22 @@ def read_code(text: str):
     if len(blob) < 14:
         return None, "the code is too short (not all of it was copied?)"
     raw, mac = blob[:-12], blob[-12:]
-    if not hmac.compare_digest(mac, hmac.new(_key(b"share"), raw, hashlib.sha256).digest()[:12]):
-        return None, "the code has been changed since AimTuner made it"
+    ok = lambda key: key is not None and hmac.compare_digest(mac, hmac.new(key, raw, hashlib.sha256).digest()[:12])
+    unofficial = False
+    if not ok(_key(b"share", "official")):
+        if ok(_key(b"share", "dev")):
+            unofficial = True               # made by a copy run from source or built by someone else
+        elif not OFFICIAL:
+            return None, ("made by the published AimTuner - this copy is not the published build, so it cannot "
+                          "check it (or the code was changed)")
+        else:
+            return None, "the code has been changed since AimTuner made it"
     try:
-        return json.loads(zlib.decompress(raw).decode("utf-8")), None
+        body = json.loads(zlib.decompress(raw).decode("utf-8"))
     except (ValueError, zlib.error):
         return None, "the code is damaged"
+    body["u"] = unofficial                  # what the key says, whatever the code claims
+    return body, None
 
 
 # ------------------------------------------------------------------------ Ed25519 (RFC 8032)

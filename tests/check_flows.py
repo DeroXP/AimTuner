@@ -203,6 +203,14 @@ def script():
             expect(cfg["r6"]["cal"]["hip_seconds"] == 9.0, "Siege calibration put back")
             yield from key("esc")
             expect(top() is s, "Siege calibration closes")
+        elif row[0] == "@pccheck":
+            from aimtuner import acscreens
+
+            yield from key("enter")
+            expect(isinstance(top(), acscreens.PCCheckScreen) and top().state == "intro",
+                   "the PC check opens from settings, asking first")
+            yield from key("esc")
+            expect(top() is s, "the PC check closes without running")
         elif row[2] == "action":
             yield from key("enter")
             cal = top()

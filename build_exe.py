@@ -65,6 +65,25 @@ def sign(built: str) -> bool:
     return True
 
 
+SECRET = os.path.join(os.path.dirname(KEY), "seal.secret")
+
+
+def write_secret() -> str | None:
+    """The published build's sealing secret (ac/seal.py), written into the source for the length
+    of the build only. Made once, kept beside the signing key."""
+    if not os.path.exists(KEY):
+        return None
+    if not os.path.exists(SECRET):
+        with open(SECRET, "w", encoding="ascii") as f:
+            f.write(os.urandom(32).hex())
+    sec = open(SECRET, encoding="ascii").read().strip()
+    path = os.path.join(HERE, "aimtuner", "ac", "_secret.py")
+    with open(path, "w", encoding="ascii") as f:
+        f.write("# written by build_exe.py for one build, then removed - never commit\n")
+        f.write(f"SECRET = bytes.fromhex({sec!r})\n")
+    return path
+
+
 def main() -> int:
     try:
         import PyInstaller  # noqa: F401
@@ -97,7 +116,12 @@ def main() -> int:
         return 1
     print(f"Building {NAME}.exe {__version__} (about half a minute)...")
     t0 = time.perf_counter()
-    subprocess.check_call(args, cwd=WORK)
+    secret = write_secret()
+    try:
+        subprocess.check_call(args, cwd=WORK)
+    finally:
+        if secret and os.path.exists(secret):
+            os.remove(secret)               # in the build only: never left in the (public) source
     built = os.path.join(dist, NAME)
     print("Signed: the published build." if sign(built) else
           f"Not signed (no key at {KEY}): this build will call itself unofficial, which is right for anyone's but the publisher's.")

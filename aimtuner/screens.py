@@ -1061,6 +1061,10 @@ _S = [
      "default: the mirrored copies move as you turn and pull the eye away from the real targets."),
     ("video.show_fps", "Performance overlay", "bool", None, "FPS, GPU time per frame and pad report rate."),
     ("#", "ANTI-CHEAT"),
+    ("@pccheck", "PC check", "action", None,
+     "A look at this PC for cheats and for traces of hiding them, done when AimTuner is installed or "
+     "updated. Passed: runs can be verified. Failed or not run: every run is unverified. Nothing leaves "
+     "your PC; only what matches the list of cheat names is kept. Open it to see the result or check again."),
     ("anticheat.hide_capture", "Hide runs from screen capture", "bool", None,
      "While a run is live, AimTuner's window is left out of every screen capture, so a program that reads "
      "the screen to aim (an \"AI\" aimbot) sees nothing. It also means OBS, Discord or the Xbox Game Bar "
@@ -1153,6 +1157,9 @@ class Settings(Screen):
         if kind == "action":
             if key == "@dpi":
                 return "open"
+            if key == "@pccheck":
+                return {"passed": "passed", "failed": "FAILED", "needed": "not run", "tampered": "record changed"}.get(
+                    self.app.pc_status, self.app.pc_status)
             if key == "@r6cal":
                 own = sens.own_pad(self.app.cfg, "r6")
                 return f"{own.rate_h:.0f}°/s hip · {own.rate_h * own.ads:.0f}°/s ADS"
@@ -1245,7 +1252,12 @@ class Settings(Screen):
         kind = row[2]
         if kind == "action":
             if "accept" in nav:
-                self.app.push({"@dpi": DpiScreen, "@r6cal": SiegeCalibrate}.get(row[0], CodCalibrate)(self.app))
+                if row[0] == "@pccheck":
+                    from .acscreens import PCCheckScreen
+
+                    self.app.push(PCCheckScreen(self.app))
+                else:
+                    self.app.push({"@dpi": DpiScreen, "@r6cal": SiegeCalibrate}.get(row[0], CodCalibrate)(self.app))
         else:
             if "left" in nav:
                 self._change(row, -1)

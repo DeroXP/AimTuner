@@ -184,11 +184,16 @@ class CheckCode(Screen):
                     y += 36
             y += 20
             reasons = b.get("w") or []
+            if b.get("u"):
+                reasons = ["made by a copy of AimTuner that is not the published build: its result cannot be vouched for"] + reasons
             if b.get("o"):
                 reasons = ["its player said it was them and counted it anyway"] + reasons
             for r in reasons[:5]:
                 y = ui.para(x, y, "·  " + r, "m", BAD if b.get("v") == "flagged" else WARN, w) + 4
             build = BUILD.get(b.get("b"), str(b.get("b")))
+            pcs = str(b.get("p") or "none")
+            build += "  ·  PC check " + {"passed": "passed", "passed+admin": "passed (with admin rights)",
+                                         "failed": "FAILED"}.get(pcs, "not run" if pcs.startswith("needed") or pcs == "none" else pcs)
             log = {"ok": "", "edited": "  ·  its log line had been EDITED", "stripped": "  ·  its log line's seal was removed"}.get(b.get("l"), "")
             ui.text(x, max(y + 20, 840), f"made by AimTuner {b.get('a')}  ·  {build}  ·  settings {b.get('f')}{log}", "s", FAINT)
             ui.text(x, max(y + 46, 866), "Same settings fingerprint as yours = the same difficulty: the scores compare directly.",
@@ -198,3 +203,122 @@ class CheckCode(Screen):
                     "A code that was changed after AimTuner made it - a better score typed in - is caught.",
                     "m", DIM, w)
         _footer(ui, "Ctrl+V  paste        Enter  check        Esc  back")
+
+
+class PCCheckScreen(Screen):
+    """The PC check: what it looks at, asking first; then it runs, then the verdict."""
+
+    decor = False
+
+    def __init__(self, app, first=False):
+        super().__init__(app)
+        self.first = first
+        self.state = "intro" if (first or app.pc_record is None) else "result"
+        self.res = app.pc_record
+        self.step, self.frac = "", 0.0
+        self.note = ""
+        self.thread = None
+        self.top = 0
+
+    def _run(self, admin: bool):
+        import os
+        import threading
+
+        from . import __version__
+        from .ac import pccheck
+
+        def work():
+            res = None
+            if admin:
+                out = self.app.pc_path + ".admin"
+                self.step = "waiting for Windows to allow admin rights"
+                if pccheck.run_elevated(out):
+                    res = pccheck.read_elevated(out)
+                if res is None:
+                    self.note = "Admin rights were not given, so it checked without them."
+            if res is None:
+                res = pccheck.Scan(elevated=False, progress=self._progress).run()
+            self.res = self.app.pc_record = pccheck.save(self.app.pc_path, res, __version__)
+            self.app.pc_status = "passed" if res["passed"] else "failed"
+            self.state = "result"
+
+        self.state = "running"
+        self.thread = threading.Thread(target=work, name="pccheck", daemon=True)
+        self.thread.start()
+
+    def _progress(self, text, frac):
+        self.step, self.frac = text, frac
+
+    def update(self, nav, now):
+        if self.state == "running":
+            return
+        if self.state == "intro":
+            if "accept" in nav:
+                self._run(True)
+            elif "x" in nav:
+                self._run(False)
+            elif "back" in nav:
+                self.app.pop()
+            return
+        if "up" in nav:
+            self.top = max(self.top - 1, 0)
+        if "down" in nav:
+            self.top += 1
+        if "x" in nav:
+            self.state = "intro"
+        elif nav & {"back", "accept"}:
+            self.app.pop()
+
+    def draw(self, ui):
+        x, w = 96.0, ui.W - 192
+        _header(ui, "PC CHECK", "a look at this PC for cheats, and for traces of hiding them")
+        if self.state == "intro":
+            y = ui.para(x, 200, "Done once when AimTuner is installed or updated. If it passes, your runs can be verified; "
+                        "if it fails or is skipped, every run is unverified (you can still play and practise).", "l", WHITE, w) + 24
+            y = ui.para(x, y, "It looks at: program history (UserAssist, MuiCache, BAM, Prefetch), installed programs, "
+                        "services and drivers, mice and keyboards (by USB id), Desktop, Downloads, Documents and the "
+                        "temp folder, folders opened, the recycle bin, scripts for Logitech G HUB and AutoHotkey, "
+                        "Python packages, and signs of traces being wiped (event logs cleared, the change journal "
+                        "deleted, trace services switched off, cleaning commands).", "m", DIM, w) + 18
+            y = ui.para(x, y, "Private: nothing is sent anywhere, and nothing is kept but what matches the list of cheat "
+                        "and bypass names. It takes a few seconds.", "m", GOOD, w) + 18
+            ui.para(x, y, "With admin rights it can also read the full program history (BAM, Prefetch), recently "
+                    "deleted files and the security log - Windows will ask. Without them it checks the rest.", "m", DIM, w)
+            _footer(ui, "A  check (with admin rights)        X  check without admin rights        B  "
+                    + ("not now" if self.first else "back"))
+            return
+        if self.state == "running":
+            ui.text(x, 260, "Checking…", "xl", WHITE)
+            ui.text(x, 340, self.step, "l", DIM)
+            ui.rect(x, 400, 600, 8, (1.0, 1.0, 1.0, 0.1))
+            ui.rect(x, 400, 600 * self.frac, 8, ACCENT)
+            return
+        r = self.res or {}
+        ok = r.get("passed")
+        ui.text(x, 196, "PASSED" if ok else "FAILED", "xl", GOOD if ok else BAD)
+        ui.text(x + 260, 214, f"{r.get('time', '')}  ·  AimTuner {r.get('app', '')}  ·  "
+                + ("with admin rights" if r.get("elevated") else "without admin rights")
+                + (f"  ·  {r.get('seconds')} s" if r.get("seconds") is not None else ""), "m", DIM)
+        y = 280
+        if self.note:
+            ui.text(x, y, self.note, "m", WARN)
+            y += 36
+        if r.get("failed_at_start"):
+            ui.text(x, y, f"Failed when AimTuner started on {r['failed_at_start']} - something was found since the check.", "m", BAD)
+            y += 36
+        finds = r.get("findings") or []
+        if not finds:
+            ui.text(x, y, "Nothing found.", "l", GOOD)
+            y += 50
+        rows = finds[self.top:self.top + 14]
+        for lvl, what, where in rows:
+            ui.text(x, y, "FAIL" if lvl == "fail" else "note", "m", BAD if lvl == "fail" else WARN)
+            ui.text(x + 90, y, what, "m", WHITE)
+            short = where if len(where) < 90 else "…" + where[-88:]
+            ui.text(x + 90, y + 28, short, "s", FAINT)
+            y += 62
+        if len(finds) > self.top + 14:
+            ui.text(x, y, f"▼ {len(finds) - self.top - 14} more", "s", FAINT)
+        cov = r.get("coverage") or {}
+        ui.para(x, 930, "Looked at: " + "  ·  ".join(f"{k} {v}" for k, v in cov.items()), "s", FAINT, w)
+        _footer(ui, "Up / Down  scroll        X  check again        B  back")

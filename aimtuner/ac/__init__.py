@@ -115,6 +115,19 @@ class RunGuard:
                     doubts.append(f"the game's clock ran {drift * 100:.1f}% off the system's")
             hide = cfg.get("anticheat", {}).get("hide_capture", True)
             out["capture_hidden"] = bool(hide and not self.hide_failed)
+            hooks = sorted(set((self.sys0 or {}).get("capture_hooks", []) + sys1.get("capture_hooks", [])))
+            if hooks and hide:
+                doubts.append("a game-capture hook (OBS) was copying the game's frames, which screen-capture "
+                              "protection cannot stop: " + ", ".join(h.split("\\")[-1] for h in hooks[:3]))
+            # the quick part of the PC check again: a cheat started or installed since AimTuner started
+            pc = getattr(app, "pc_status", "needed")
+            if pc == "passed":
+                from . import pccheck
+
+                quick = pccheck.Scan(quick=True).run()
+                bad = [f for f in quick["findings"] if f[0] == "fail"]
+                if bad:
+                    flags.append("found during the run: " + bad[0][1])
             if not hide:
                 doubts.append("screen-capture protection was off (Settings), so a screen-reading aimbot could see the game")
             elif self.hide_failed:
@@ -123,6 +136,12 @@ class RunGuard:
                 flags.append("AimTuner's own files have been changed since it was published")
             elif out["build"] != "official":
                 doubts.append("not the published build (run from source, or built locally)")
+            out["pc_check"] = pc
+            out["pc_check_admin"] = bool((getattr(app, "pc_record", None) or {}).get("elevated"))
+            if pc != "passed":
+                doubts.append({"failed": "this PC failed its PC check (Settings > Anti-cheat)",
+                               "tampered": "this PC's PC check record was changed by hand",
+                               }.get(pc, "this PC has not had its PC check"))
         out["flags"], out["doubts"], out["notes"] = flags, doubts, notes
         out["behaviour"] = "pending" if cap is not None else "none"
         if cap is None and not self.virtual:

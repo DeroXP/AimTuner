@@ -110,6 +110,9 @@ class App:
         self.fps = 0.0
         self.cpu_ms = 0.0
         self.t_start = self.now = time.perf_counter()
+        # the PC check (ac/pccheck.py): its verdict for this PC and this version of AimTuner
+        self.pc_path = os.path.join(os.path.dirname(os.path.abspath(opts.config or config.CONFIG_PATH)), "pccheck.json")
+        self.pc_status, self.pc_record = "needed", None
         self.build_state = "checking"  # ac/seal.py: official / modified / source, worked out in the background
         threading.Thread(target=self._check_build, name="build-check", daemon=True).start()
         self.ac_pending: list = []   # (guard, record) of runs whose play is still being checked (ac/)
@@ -135,6 +138,8 @@ class App:
         self.apply_input()
         self.apply_video()
         self.screens.append(MainMenu(self))
+        if not self.offscreen:
+            self._pc_start()
         print(f"AimTuner {__version__}  |  {self.gfx.info['renderer']}  |  GL {self.gfx.info['version']}"
               f"  |  {self.gfx.w}x{self.gfx.h} @ {self.refresh} Hz")
         print(f"settings {opts.config or config.CONFIG_PATH}  |  logs {self.log.dir}")
@@ -376,6 +381,36 @@ class App:
                 self._pad_profile = cfg["active_profile"]
                 self.set_profile(name)
                 self.toast(f"Input: {name}")
+
+    def _pc_start(self):
+        """At start-up: the PC check if this PC or this version has not had one (it asks first);
+        otherwise its quick part, in the background - a cheat installed since fails it now."""
+        from .ac import pccheck
+
+        self.pc_status, self.pc_record = pccheck.status(self.pc_path, __version__)
+        if self.pc_status in ("needed", "tampered"):
+            from .acscreens import PCCheckScreen
+
+            self.push(PCCheckScreen(self, first=True))
+        elif self.pc_status == "passed":
+            threading.Thread(target=self._pc_quick, name="pccheck-quick", daemon=True).start()
+
+    def _pc_quick(self):
+        from .ac import pccheck
+
+        try:
+            res = pccheck.Scan(quick=True).run()
+        except Exception:
+            return
+        if not res["passed"]:
+            rec = dict(self.pc_record or {})
+            rec.update(passed=False, findings=(rec.get("findings") or []) + res["findings"],
+                       failed_at_start=time.strftime("%Y-%m-%dT%H:%M:%S"))
+            for k in ("mac", "app", "machine", "time"):
+                rec.pop(k, None)
+            self.pc_record = pccheck.save(self.pc_path, rec, __version__)
+            self.pc_status = "failed"
+            self.toast("PC check failed at start-up - runs are unverified (Settings > Anti-cheat)", 6.0)
 
     def _check_build(self):
         from .ac import seal

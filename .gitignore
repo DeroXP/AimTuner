@@ -13,3 +13,6 @@ config.json.bak-*
 dist/
 build/
 *.zip
+pccheck.json
+pccheck.json.tmp
+aimtuner/ac/_secret.py

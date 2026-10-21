@@ -38,8 +38,13 @@ def main() -> int:
     ap.add_argument("--exit-after", type=float, metavar="SEC", help="quit after SEC seconds and print frame timing")
     ap.add_argument("--logdir", help="write run logs here instead of ./logs")
     ap.add_argument("--config", help="use this config file instead of ./config.json")
+    ap.add_argument("--pccheck", metavar="OUT", help=argparse.SUPPRESS)     # the PC check, with admin rights
     opts = ap.parse_args()
     opts.fast = False
+    if opts.pccheck:
+        from aimtuner.ac import pccheck
+
+        return pccheck.elevated_main(opts.pccheck)
 
     if opts.bench and not opts.offscreen:
         opts.offscreen = (3840, 2160)
