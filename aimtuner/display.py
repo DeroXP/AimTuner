@@ -76,3 +76,76 @@ def cap_under(hz_exact: float | None, hz_whole: int) -> int:
     if hz_exact and abs(hz_exact - hz_whole) < 1.0:
         return max(int(math.floor(hz_exact + 1e-6)) - 1, 30)
     return max(int(hz_whole) - 2, 30)
+
+
+def driver_cap(exe: str | None = None) -> int | None:
+    """The NVIDIA driver's own "Max Frame Rate" for this program - its own profile in the NVIDIA
+    Control Panel if it has one (exe: e.g. "AimTuner.exe"), else the global one - or None if
+    there is none or this is not an NVIDIA card. Read only - nothing in the driver is changed.
+
+    When the driver caps too, its limiter and ours pace the same frames. The driver's waits
+    inside the buffer swap - after AimTuner has read the input and drawn the frame - so every
+    frame shows input one wait older (about 4 ms at 240 Hz). Pacing a frame under the driver's
+    cap keeps the waiting in AimTuner's limiter, before the input is read."""
+    if sys.platform != "win32":
+        return None
+    try:
+        nv = ctypes.WinDLL("nvapi64.dll")
+    except OSError:
+        return None
+    try:
+        q = nv.nvapi_QueryInterface
+        q.restype, q.argtypes = ctypes.c_void_p, [ctypes.c_uint32]
+        P = ctypes.c_void_p
+
+        def fn(iid, *args):
+            addr = q(iid)
+            if not addr:
+                raise OSError(f"nvapi {iid:#x} missing")
+            return ctypes.CFUNCTYPE(ctypes.c_int, *args)(addr)
+
+        class SETTING(ctypes.Structure):               # NVDRS_SETTING (version 1)
+            _fields_ = [("version", ctypes.c_uint32), ("name", ctypes.c_wchar * 2048), ("id", ctypes.c_uint32),
+                        ("type", ctypes.c_uint32), ("location", ctypes.c_uint32), ("is_cur_pre", ctypes.c_uint32),
+                        ("is_pre_valid", ctypes.c_uint32), ("pre", ctypes.c_ubyte * 4100),
+                        ("cur", ctypes.c_ubyte * 4100)]
+
+        if fn(0x0150E828)():                           # NvAPI_Initialize
+            return None
+        sess = P()
+        if fn(0x0694D52E, ctypes.POINTER(P))(ctypes.byref(sess)):       # NvAPI_DRS_CreateSession
+            return None
+        try:
+            if fn(0x375DBD6B, P)(sess):                # NvAPI_DRS_LoadSettings
+                return None
+            prof = P()
+            if fn(0x617BFF9F, P, ctypes.POINTER(P))(sess, ctypes.byref(prof)):   # GetCurrentGlobalProfile
+                return None
+            if exe:
+                class APP(ctypes.Structure):           # NVDRS_APPLICATION (version 4)
+                    _fields_ = [("version", ctypes.c_uint32), ("predefined", ctypes.c_uint32),
+                                ("name", ctypes.c_wchar * 2048), ("friendly", ctypes.c_wchar * 2048),
+                                ("launcher", ctypes.c_wchar * 2048), ("file_in_folder", ctypes.c_wchar * 2048),
+                                ("flags", ctypes.c_uint32), ("cmdline", ctypes.c_wchar * 2048)]
+
+                app, own = APP(), P()
+                app.version = ctypes.sizeof(APP) | (4 << 16)
+                find = fn(0xEEE566B2, P, ctypes.c_wchar_p, ctypes.POINTER(P), ctypes.POINTER(APP))
+                if find(sess, exe, ctypes.byref(own), ctypes.byref(app)) == 0 and own.value:
+                    prof = own                         # its own profile (settings it does not set come from global)
+            st = SETTING()
+            st.version = ctypes.sizeof(SETTING) | (1 << 16)
+            get = fn(0x73BF8338, P, P, ctypes.c_uint32, ctypes.POINTER(SETTING))   # NvAPI_DRS_GetSetting
+            r = get(sess, prof, 0x10835002, ctypes.byref(st))           # FRL_FPS: "Max Frame Rate"
+            if r == -160 and prof is not None:         # NVAPI_SETTING_NOT_FOUND in its own profile
+                gp = P()
+                fn(0x617BFF9F, P, ctypes.POINTER(P))(sess, ctypes.byref(gp))
+                r = get(sess, gp, 0x10835002, ctypes.byref(st))
+            if r:
+                return None
+            fps = int.from_bytes(bytes(st.cur[:4]), "little")
+            return fps if 20 <= fps <= 1000 else None  # 0 = off
+        finally:
+            fn(0xDAD9CFF8, P)(sess)                    # NvAPI_DRS_DestroySession
+    except Exception:
+        return None

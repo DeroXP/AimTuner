@@ -27,46 +27,107 @@ def slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-") or "pad"
 
 
+def _line(rec: dict) -> str:
+    return json.dumps({k: v for k, v in rec.items() if not k.startswith("_")}, separators=(",", ":")) + "\n"
+
+
 class Log:
+    """The run log. `all` is every line of runs.jsonl; `runs` - what every screen counts - leaves
+    out runs the anti-cheat flagged (unless their player said they were genuine) and lines whose
+    seal shows they were edited by hand (ac/seal.py)."""
+
     def __init__(self, log_dir: str):
+        from .ac import seal
+
         self.dir = log_dir
         self.path = os.path.join(log_dir, "runs.jsonl")
-        self.runs = load_runs(log_dir)
+        self.all = load_runs(log_dir)
         self.endless = load_runs(log_dir, "endless.jsonl")
+        seal.verify(self.all)
+        seal.verify(self.endless)
+        self.runs = [r for r in self.all if self.counts(r)]
+
+    @staticmethod
+    def counts(rec: dict) -> bool:
+        from . import ac
+        from .ac import seal
+
+        return seal.trusted(rec) and ac.counts(rec)
+
+    def tampered(self) -> list:
+        return [r for r in self.all + self.endless if r.get("_seal") in ("edited", "stripped")]
 
     def save(self, rec: dict, detail: dict) -> str:
         """Append the summary line, then write the detail file. Raises OSError if
         either could not be written; the run is kept in memory regardless so the
         results and compare screens still show it."""
-        self.runs.append(rec)
+        from .ac import seal
+
+        seal.seal(rec, self.all[-1] if self.all else None)
+        rec["_seal"] = "ok"
+        self.all.append(rec)
+        if self.counts(rec):
+            self.runs.append(rec)
         os.makedirs(os.path.join(self.dir, "runs"), exist_ok=True)
         with open(self.path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+            f.write(_line(rec))
         full = os.path.join(self.dir, "runs", f"{rec['run_id']}_{slug(rec['controller'])}.json")
         with open(full, "w", encoding="utf-8") as f:
-            json.dump(dict(rec, **detail), f, indent=1)
+            json.dump(dict({k: v for k, v in rec.items() if not k.startswith("_")}, **detail), f, indent=1)
         return full
 
     def save_endless(self, rec: dict) -> None:
         """An endless run: one line in endless.jsonl, and not in `runs` (nothing compares it)."""
+        from .ac import seal
+
+        seal.seal(rec, self.endless[-1] if self.endless else None)
+        rec["_seal"] = "ok"
         self.endless.append(rec)
         os.makedirs(self.dir, exist_ok=True)
         with open(os.path.join(self.dir, "endless.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+            f.write(_line(rec))
+
+    def _rewrite(self, runs: list, path: str) -> None:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for r in runs:
+                f.write(_line(r))
+        os.replace(tmp, path)
+
+    def update(self, rec: dict) -> None:
+        """A logged run changed (its anti-cheat verdict came in, or was overridden): reseal it,
+        rewrite its line, and count it or not accordingly."""
+        from .ac import seal
+
+        if rec.get("_seal") in ("ok", None):
+            seal.reseal(rec)
+        if rec.get("endless"):
+            if any(r is rec for r in self.endless):
+                self._rewrite(self.endless, os.path.join(self.dir, "endless.jsonl"))
+            return
+        if not any(r is rec for r in self.all):
+            return
+        # only this run moves in or out of the counted list (it is a live list other screens hold)
+        inside = any(r is rec for r in self.runs)
+        if self.counts(rec) and not inside:
+            self.runs.append(rec)
+        elif not self.counts(rec) and inside:
+            self.runs.remove(rec)
+        self._rewrite(self.all, self.path)
 
     def rename_controller(self, old: str, new: str) -> None:
         """Renaming a profile carries its history along, or its stats would split in two."""
-        for runs, path in ((self.runs, self.path), (self.endless, os.path.join(self.dir, "endless.jsonl"))):
+        from .ac import seal
+
+        for runs, path in ((self.all, self.path), (self.endless, os.path.join(self.dir, "endless.jsonl"))):
             hit = [r for r in runs if r.get("controller") == old]
             if not hit:
                 continue
             for r in hit:
                 r["controller"] = new
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                for r in runs:
-                    f.write(json.dumps(r, separators=(",", ":")) + "\n")
-            os.replace(tmp, path)
+                if r.get("_seal") == "ok":
+                    seal.reseal(r)
+            self._rewrite(runs, path)
 
 
 def load_runs(log_dir: str, name: str = "runs.jsonl") -> list:

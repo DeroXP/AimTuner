@@ -40,6 +40,31 @@ VERSION_INFO = """VSVersionInfo(
 """
 
 
+# The publisher's signing key (Ed25519 seed, hex). It lives here, outside the project folder and
+# out of OneDrive and git: whoever holds it can make a build AimTuner calls "official".
+KEY = os.path.join(os.path.expanduser("~"), ".aimtuner-signing", "ed25519.key")
+
+
+def sign(built: str) -> bool:
+    """List every file of the build with its hash and sign the list (aimtuner/ac/seal.py checks it
+    at start-up). False when there is no key, or it is not the one the code trusts."""
+    import json
+
+    from aimtuner.ac import seal
+
+    if not os.path.exists(KEY):
+        return False
+    seed = bytes.fromhex(open(KEY, encoding="ascii").read().strip())
+    if seal.ed_public(seed).hex() != seal.PUBLIC_KEY:
+        print("The signing key does not match aimtuner/ac/seal.py's PUBLIC_KEY.")
+        return False
+    files = {rel: seal.file_hash(os.path.join(built, rel)) for rel in seal.manifest_files(built)}
+    body = json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    with open(os.path.join(built, "_internal", seal.MANIFEST), "w", encoding="utf-8") as f:
+        json.dump({"files": files, "sig": seal.ed_sign(seed, body).hex()}, f)
+    return True
+
+
 def main() -> int:
     try:
         import PyInstaller  # noqa: F401
@@ -74,6 +99,8 @@ def main() -> int:
     t0 = time.perf_counter()
     subprocess.check_call(args, cwd=WORK)
     built = os.path.join(dist, NAME)
+    print("Signed: the published build." if sign(built) else
+          f"Not signed (no key at {KEY}): this build will call itself unofficial, which is right for anyone's but the publisher's.")
     exe, internal = os.path.join(HERE, NAME + ".exe"), os.path.join(HERE, "_internal")
     try:
         # the old support folder goes first - but only if it is one of ours

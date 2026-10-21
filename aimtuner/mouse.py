@@ -70,7 +70,12 @@ def label(name: str) -> str:
     return LABELS.get(name, name)
 
 
-def parse(buf, count: int, t: float, out, held: set, state: dict) -> int:
+def new_provenance() -> dict:
+    """Running counts of where input came from (see parse)."""
+    return {"inj_motion": 0, "inj_button": 0, "inj_key": 0, "inj_keys": {}, "absolute": 0, "motion_devs": {}}
+
+
+def parse(buf, count: int, t: float, out, held: set, state: dict, count_prov: bool = True) -> int:
     """Turn `count` RAWINPUT records at the start of `buf` into queue rows appended to `out`.
 
     Returns how many of them were mouse-motion reports. `held` is the set of keys already
@@ -85,10 +90,29 @@ def parse(buf, count: int, t: float, out, held: set, state: dict) -> int:
     """
     unpack = struct.unpack_from
     off = moved = 0
+    prov = state.get("prov")
+    if prov is None:
+        prov = state["prov"] = new_provenance()
+    if not count_prov:                      # not ours to read (another window has focus): not counted
+        prov = new_provenance()
     for _ in range(count):
         typ, size = unpack("<II", buf, off)
+        # Which device sent it. Input made up by software (SendInput, mouse_event, keybd_event - what
+        # macro tools and most cheats use) arrives with no device at all: handle 0. Counted for the
+        # anti-cheat (ac/): an injected movement or click during a run is never a hand's.
+        hdev = unpack("<Q", buf, off + 8)[0]
         if typ == 0:
             flags, bflags, bdata, _raw, dx, dy = unpack("<HxxHHIii", buf, off + 24)
+            if (dx or dy) and not (flags & 0x01):
+                if hdev == 0:
+                    prov["inj_motion"] += 1
+                else:
+                    md = prov["motion_devs"]
+                    md[hdev] = md.get(hdev, 0) + 1
+            elif flags & 0x01:
+                prov["absolute"] += 1
+            if bflags & 0x03FF and hdev == 0:
+                prov["inj_button"] += 1
             if flags & 0x01:                    # absolute coordinates: difference them
                 last = state.get("abs")
                 state["abs"] = (dx, dy)
@@ -97,7 +121,7 @@ def parse(buf, count: int, t: float, out, held: set, state: dict) -> int:
             if dx or dy:
                 out.append((t, MOTION, dx, dy))
                 moved += 1
-                state["dev"] = unpack("<Q", buf, off + 8)[0]    # which mouse moved (dpi.py asks it for its DPI)
+                state["dev"] = hdev                 # which mouse moved (dpi.py asks it for its DPI)
             if bflags:
                 for bit, name, down in _BTN_FLAGS:
                     if bflags & bit:
@@ -107,6 +131,10 @@ def parse(buf, count: int, t: float, out, held: set, state: dict) -> int:
         elif typ == 1:
             _make, flags, _res, vkey, _msg = unpack("<HHHHI", buf, off + 24)
             name = VK.get(vkey)
+            if hdev == 0 and not (flags & 0x01) and name:
+                prov["inj_key"] += 1
+                ik = prov["inj_keys"]
+                ik[name] = ik.get(name, 0) + 1
             if name:
                 if flags & 0x01:                # break = released
                     if name in held:
@@ -217,7 +245,7 @@ class _RawThread(threading.Thread):
                     self.packets += parse(buf, n, t, q, held, state)
                 else:               # not ours to read: keep only which keys are down, so repeats stay filtered
                     scratch.clear()
-                    parse(buf, n, t, scratch, held, state)
+                    parse(buf, n, t, scratch, held, state, False)
         devs = (RID * 2)(RID(1, 2, 0x1, None), RID(1, 6, 0x1, None))        # RIDEV_REMOVE
         u32.RegisterRawInputDevices(devs, 2, ctypes.sizeof(RID))
         u32.DestroyWindow(hwnd)
@@ -288,6 +316,27 @@ class Mouse:
                     self.held.add(name)
         except (AttributeError, OSError):
             pass
+
+    def provenance(self) -> dict:
+        """Where this program's input has come from so far (counts since start; see parse). A run
+        takes one copy at its start and one at its end and keeps the difference."""
+        st = self.thread.state if self.thread else {}
+        p = st.get("prov") or new_provenance()
+        return {"inj_motion": p["inj_motion"], "inj_button": p["inj_button"], "inj_key": p["inj_key"],
+                "inj_keys": dict(p["inj_keys"]), "absolute": p["absolute"], "motion_devs": dict(p["motion_devs"])}
+
+    def device_name(self, hdev: int) -> str | None:
+        """Windows' device path for a raw-input device handle (vendor and product ids are in it)."""
+        try:
+            u32 = ctypes.WinDLL("user32", use_last_error=True)
+            u32.GetRawInputDeviceInfoW.argtypes = [wt.HANDLE, wt.UINT, wt.LPVOID, ctypes.POINTER(wt.UINT)]
+            u32.GetRawInputDeviceInfoW.restype = wt.UINT
+            size = wt.UINT(512)
+            buf = ctypes.create_unicode_buffer(512)
+            n = u32.GetRawInputDeviceInfoW(wt.HANDLE(hdev), 0x20000007, buf, ctypes.byref(size))
+            return buf.value if 0 < n < 0xFFFFFFFF else None
+        except (AttributeError, OSError):
+            return None
 
     def device_path(self) -> str | None:
         """The Windows device path of the mouse that last moved (it carries the USB vendor and

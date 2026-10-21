@@ -997,6 +997,100 @@ the heaviest scene. On the real display, fullscreen 3840x2160 at 240 Hz measured
 performance overlay shows live FPS, GPU and CPU time per frame and the pad's
 report rate, and every run log stores its own frame-rate statistics.
 
+### Frame pacing
+
+Every frame should start exactly on its slot, and the wait should happen
+*before* the input is read, not after. What AimTuner does for that:
+
+- **The limiter adapts.** It sleeps until shortly before the slot and spins the
+  rest. The margin follows the latest of the last few hundred wake-ups on your
+  machine, so it is as short as Windows allows there, and never so short that a
+  frame starts late.
+- **Game scheduling.** The render thread joins Windows' "Games" multimedia class
+  (MMCSS), and AimTuner opts out of power throttling ("EcoQoS"), which on a CPU
+  with performance and efficiency cores keeps the render thread off the slow
+  cores and waking on time.
+- **Not two limiters.** If the NVIDIA driver has its own *Max Frame Rate* (for
+  every game, or for AimTuner.exe - read from the driver, never changed), the
+  Auto frame cap stays one frame under it. Otherwise both limiters pace the same
+  frames, and the driver's waits inside the buffer swap *after* AimTuner has read
+  the input: measured here with a global 238 fps cap, the swap held every frame
+  for 3.9 ms - about 4 ms of input lag, and frames up to 0.2 ms off their slot.
+  At 237 the swap returns in 0.02 ms and frames land within 0.05 ms of their slot
+  at the 99th percentile (`python tools/frametest.py` measures it on your screen).
+
+What is left over is the display path. On this machine Windows composites
+AimTuner's OpenGL window rather than flipping it straight to the screen (no
+G-Sync, no tearing), so about one frame in eighty waits for the next refresh -
+a 3 Hz beat between 237 fps and 240 Hz. With an NVIDIA card,
+**NVIDIA Control Panel > Manage 3D settings > Program settings > AimTuner.exe >
+Vulkan/OpenGL present method: Prefer layered on DXGI Swapchain** gives it the
+same direct path (and G-Sync) a DirectX game gets; setting *Max Frame Rate* to
+Off for AimTuner.exe there too lets Auto go back to one under your refresh.
+
+## Anti-cheat
+
+Every run gets a verdict, shown under its results and kept in its log line:
+
+- **Verified** - nothing found, and everything that can be checked was checked.
+- **Unverified** - nothing that proves cheating, but something stops the run
+  being vouched for: a macro tool or debugger running, an unknown DLL loaded into
+  AimTuner, screen-capture protection off, not the published build, or a run too
+  short to judge.
+- **Flagged** - evidence of cheating. A flagged run is kept and shown, with its
+  reasons, but not counted in bests, averages, Progress or comparisons. If it was
+  really you, **V** on its results counts it anyway - and its share code says so.
+
+**I** on a run's results shows everything that was checked. What is checked:
+
+| Layer | What it catches |
+|---|---|
+| **Where the input came from** | Mouse movement, clicks or bound keys made by software (SendInput, AutoHotkey, most scripts and aimbots: Windows reports them with no device behind them), and two devices moving the aim at once (an input box, a second mouse) |
+| **What is running** | Known aim cheats (Aimmy and the like, Cronus Zen Studio, XIM managers, KMBox tools) flag the run; macro tools that can run recoil scripts (AutoHotkey, reWASD, macro recorders) and debuggers or memory editors (Cheat Engine, x64dbg) make it unverified |
+| **What is loaded into AimTuner** | DLLs that are not Windows', AimTuner's, a graphics driver, an overlay or an antivirus; a debugger attached; the Interception input driver installed |
+| **The clock** | The game's clock against two other Windows clocks over the run - a speed hack slows one of them |
+| **Screen capture** | During a run the window is hidden from every screen capture, so a program that reads the screen to aim (an "AI" aimbot) sees nothing. It also hides the game from OBS and recorders; **Settings > Anti-cheat** turns it off (runs are then unverified) |
+| **The build** | The published AimTuner.zip is signed (Ed25519): at start-up every file is hashed and checked against the signed list. A changed file makes every run flagged |
+| **The log** | Every line of `runs.jsonl` is sealed (HMAC) and chained to the one before: a score edited by hand is not counted, and a deleted run shows as a gap |
+| **How it was played** | From the run's capture, against how people play - below |
+
+**How it was played.** Each check needs enough of a run to judge, and says
+nothing until it has it:
+
+| Check | A cheat | A person |
+|---|---|---|
+| Instant lock | turns onto a new target within a frame or two of it appearing | needs 120 ms and more to start (anticipating where one will appear does not count: that starts slowly) |
+| Aim smoothing | a turn at its fastest from its first frame (an aimbot closing a share of the gap each frame) | starts slowly and peaks about half way: of ~500 real turns checked, none started above 65% of top speed |
+| Reaction spread | reactions all the same length, give or take 3-5 ms | vary by 10 ms and more, even to something on a rhythm |
+| Triggerbot | the shot a frame after reaching the target, nearly every time, never early | fires early sometimes, or settles first |
+| Turning with a target | turns with a moving target 20-40 ms after it changes direction (screen-reading aimbots included: their capture delay is that short) | 100-250 ms |
+| Anti-recoil | the pull against recoil arrives in one step the frame fire goes down and leaves in one step when it comes up (a script, or a controller adapter's anti-recoil, adding its pull on top of the hand's) | ramps in (or was already pulling) and eases off |
+| Machine-made turns | dead-straight turns (a "humanized" aimbot's planned movement) - never enough on its own to flag | a hand's turns bow |
+
+How these were set: simulated cheats (`tests/cheatsim.py`: a snap aimbot, a
+smoothed one, a "humanized AI" one with a screen-capture delay, human-like
+reactions and bell-shaped movements, and anti-recoil on a mouse and on a
+controller) played through the real game, against 19 real runs on a controller
+and a mouse and 19 runs of the ghost - none of the human runs may be flagged,
+and the thresholds sit well outside all of them. On those simulations the snap
+and smoothed aimbots are flagged on about nine runs in ten (the misses are runs
+with only a handful of targets); anti-recoil from about 0.5 counts a frame of
+pull on a mouse (~4.5°/s at 30 cm per turn) and a 0.15 stick offset on a pad;
+the humanized aimbot is flagged wherever a target moves and only marked
+unverified on static drills. `tests/check_anticheat.py` replays all of it.
+
+**Comparing with friends.** On a run's results, **C** copies a share code: the
+result, the settings fingerprint, the build and the verdict. A friend pastes it
+into **Check a share code** on the main menu. A code changed after AimTuner made
+it - a better score typed in - is refused. Codes with the same settings
+fingerprint were played at the same difficulty.
+
+What it cannot do: everything here runs on the player's own computer, so someone
+who takes AimTuner apart can get round any of it (the keys that seal logs and
+codes are inside it). A cheat that leaves no trace - a hardware box that
+passes itself off as the mouse, used with a slow, careful "humanized" aim on
+static targets - can pass. It stops the off-the-shelf ways, and makes the rest work.
+
 ## Honest limitations
 
 - **Reaction times include your display and system latency.** Absolute numbers

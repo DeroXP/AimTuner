@@ -103,6 +103,9 @@ DEFAULTS = {
         "weapon": "r4c", "sight": "1x", "barrel": "flash_hider", "grip": "vertical",
         "speed": 2,                         # operator speed 1-3: 3 is the fast, 100-health kind
     },
+    # Anti-cheat (ac/). Hiding the window from screen capture during runs keeps a screen-reading
+    # ("AI") aimbot blind; it also keeps OBS and other recorders from seeing the game while you play.
+    "anticheat": {"hide_capture": True},
     "video": {
         "fullscreen": True,
         "vsync": False,

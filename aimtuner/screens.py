@@ -72,7 +72,7 @@ def _sens_line(cfg, track: str) -> str:
 
 # -------------------------------------------------------------------- main
 class MainMenu(Screen):
-    ITEMS = ("core", "cod", "r6", "progress", "sens", "lab", "pad", "binds", "settings", "compare", "duel", "quit")
+    ITEMS = ("core", "cod", "r6", "progress", "sens", "lab", "pad", "binds", "settings", "compare", "duel", "check", "quit")
 
     def __init__(self, app):
         super().__init__(app)
@@ -113,6 +113,10 @@ class MainMenu(Screen):
                 app.push(Settings(app))
             elif kind == "compare":
                 app.push(Compare(app))
+            elif kind == "check":
+                from .acscreens import CheckCode
+
+                app.push(CheckCode(app))
             elif kind == "quit":
                 app.quit()
 
@@ -135,6 +139,7 @@ class MainMenu(Screen):
             "binds": ("Binds", _bind_text(cfg)),
             "settings": ("Settings", None),
             "compare": ("Compare controllers", _runs(len(app.log.runs))),
+            "check": ("Check a share code", "a friend's run"),
             "quit": ("Quit", None),
         }
         for i, kind in enumerate(self.ITEMS):
@@ -208,6 +213,19 @@ class MainMenu(Screen):
             ty = ui.para(tx, ty + 70, "Every metric, side by side, with an honest read on whether a difference is "
                          "real or just run-to-run noise.", "m", DIM, tw) + 20
             self._scoreboard(ui, tx, ty, tw)
+        elif kind == "check":
+            ui.text(tx, ty, "Check a share code", "xl", WHITE)
+            n_flag = sum(1 for r in app.log.all if (r.get("integrity") or {}).get("status") == "flagged")
+            bad = app.log.tampered()
+            ui.para(tx, ty + 70, "Comparing with friends: on a run's results, C copies a share code - the result, "
+                    "the settings fingerprint and what the anti-cheat said about the run. Paste a friend's here to "
+                    "see it; a code changed after AimTuner made it (a better score typed in) is caught.\n\n"
+                    "The anti-cheat checks every run: where the input came from, what was running, code loaded into "
+                    "AimTuner, the game's clock, the window hidden from screen capture, and how the run was played. "
+                    "A flagged run is kept but not counted.\n\n"
+                    f"Your log: {n_flag} flagged run{'s' if n_flag != 1 else ''}"
+                    + (f", {len(bad)} line{'s' if len(bad) != 1 else ''} edited by hand (not counted)." if bad else "."),
+                    "m", DIM, tw)
         else:
             ui.text(tx, ty, "Quit", "xl", WHITE)
             ui.para(tx, ty + 70, "Runs are saved as you finish them - nothing is lost by closing.", "m", DIM, tw)
@@ -1031,7 +1049,9 @@ _S = [
      "Off gives the lowest input lag (and is fine with G-Sync). On removes tearing but queues a frame or two."),
     ("video.fps_cap", "Frame cap", "choice", (-2, 0, 120, 144, 165, 240, 360, 480, -1),
      "\"Auto\" (the default) caps one frame under the monitor's real refresh rate - 238 on a 239.99 Hz "
-     "\"240 Hz\" screen, 178 on 179.9 Hz - so frames never queue up behind the display. \"Display\" caps "
+     "\"240 Hz\" screen, 178 on 179.9 Hz - so frames never queue up behind the display. If the NVIDIA "
+     "driver has its own Max Frame Rate, Auto stays one under that too: the driver's limiter waits after "
+     "the input has been read (about 4 ms of lag at 240 Hz), AimTuner's waits before. \"Display\" caps "
      "at the refresh rate itself. Uncapped just burns power - the scene already renders far faster than "
      "any display."),
     ("video.quality", "Graphics", "choice", ("high", "low"),
@@ -1040,6 +1060,12 @@ _S = [
      "A glossy floor that mirrors the ceiling lights and the targets (High graphics only). Off by "
      "default: the mirrored copies move as you turn and pull the eye away from the real targets."),
     ("video.show_fps", "Performance overlay", "bool", None, "FPS, GPU time per frame and pad report rate."),
+    ("#", "ANTI-CHEAT"),
+    ("anticheat.hide_capture", "Hide runs from screen capture", "bool", None,
+     "While a run is live, AimTuner's window is left out of every screen capture, so a program that reads "
+     "the screen to aim (an \"AI\" aimbot) sees nothing. It also means OBS, Discord or the Xbox Game Bar "
+     "cannot record the game while you play - turn it off to record, and runs made then are marked "
+     "unverified. Menus and results can always be captured."),
 ]
 _NAMES = dict({k: v[1] for k, v in codkit.STYLES.items()}, cross_dot="Cross + Dot",
               own="Each track's own", core="Core track", cod="Call of Duty track", r6="Siege track")
@@ -1147,7 +1173,8 @@ class Settings(Screen):
         if key == "video.fps_cap":
             app = self.app
             hz = f"{app.refresh_exact:.2f}" if app.refresh_exact else str(app.refresh)
-            return {-2: f"Auto: {app.auto_cap} fps ({hz} Hz)", 0: f"Display ({app.refresh} Hz)",
+            why = f"NVIDIA caps {app.driver_cap}" if app.driver_cap and app.driver_cap <= app.auto_cap + 1 else f"{hz} Hz"
+            return {-2: f"Auto: {app.auto_cap} fps ({why})", 0: f"Display ({app.refresh} Hz)",
                     -1: "Uncapped"}.get(v, f"{v} fps")
         if key == "game.duration":
             return f"{v} s"
@@ -1658,6 +1685,9 @@ class Results(Screen):
 
     def update(self, nav, now):
         app = self.app
+        if nav & {"c", "i", "v"}:
+            self._integrity(nav)
+            return
         if self._ready() and nav & {"x", "y"}:
             from . import replay
 
@@ -1681,6 +1711,34 @@ class Results(Screen):
                 app.start(self.scn, over={"endless": True} if self.endless else None)
         elif "back" in nav:
             app.pop()
+
+    def _integrity(self, nav):
+        """C: copy the run's share code. I: what the anti-cheat found. V: a flagged run was you."""
+        from . import acscreens
+        from .ac import seal
+
+        app, rec = self.app, self.rec
+        if "i" in nav:
+            app.push(acscreens.IntegrityScreen(app, rec))
+        elif "c" in nav:
+            code = seal.share_code(rec)
+            try:
+                import glfw
+
+                glfw.set_clipboard_string(app.win, code)
+                app.toast("Share code copied - a friend pastes it into Check a share code", 4.0)
+            except Exception:
+                app.toast("Could not reach the clipboard", 3.0)
+        elif "v" in nav:
+            i = rec.get("integrity") or {}
+            if i.get("status") == "flagged" and not i.get("override"):
+                i["override"] = True
+                i["override_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+                try:
+                    app.log.update(rec)
+                except OSError:
+                    pass
+                app.toast("Counted. Its share code still says it was flagged, and that you counted it.", 5.0)
 
     def draw(self, ui):
         rec, W = self.rec, ui.W
@@ -1768,7 +1826,14 @@ class Results(Screen):
             bits.append(f"input timestamps ±{i['timestamp_resolution_ms']:.2f} ms")
         ui.text(98, 960, "   ·   ".join(bits), "s", FAINT)
         ui.text(98, 986, f"saved to logs/{'endless' if self.endless else 'runs'}.jsonl   ·   {rec['run_id']}", "s", FAINT)
+        from . import acscreens
+
+        acscreens.verdict_line(ui, rec, 98, 926, 1500)
         extra = "Y  replay with the ghost        X  every target        " if self._ready() else ""
+        integ = rec.get("integrity") or {}
+        extra += "C  share code        I  anti-cheat        "
+        if integ.get("status") == "flagged" and not integ.get("override"):
+            extra += "V  it was me - count it        "
         if self.endless:
             _footer(ui, extra + "A  again, endless        B  menu")
         elif self.playlist:

@@ -11,6 +11,7 @@ import ctypes.wintypes as wt
 import math
 import os
 import sys
+import threading
 import time
 
 import glfw
@@ -33,6 +34,7 @@ _KEYS = {
     glfw.KEY_X: "x", glfw.KEY_Y: "y", glfw.KEY_Q: "q", glfw.KEY_E: "e",
     glfw.KEY_W: "w", glfw.KEY_A: "a", glfw.KEY_S: "s", glfw.KEY_D: "d",
     glfw.KEY_F11: "f11", glfw.KEY_F12: "f12",
+    glfw.KEY_C: "c", glfw.KEY_V: "v", glfw.KEY_I: "i",
 }
 
 
@@ -45,6 +47,34 @@ def _tune_process():
         k32.GetCurrentProcess.restype = wt.HANDLE
         k32.SetPriorityClass.argtypes = [wt.HANDLE, wt.DWORD]
         k32.SetPriorityClass(k32.GetCurrentProcess(), 0x00008000)   # ABOVE_NORMAL_PRIORITY_CLASS
+    except (AttributeError, OSError):
+        pass
+    try:
+        # No power throttling ("EcoQoS"): on a CPU with performance and efficiency cores, a
+        # throttled thread is steered to the slow cores and wakes from its sleeps later.
+        # PROCESS_POWER_THROTTLING_STATE {Version 1, ControlMask EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION, StateMask 0}
+        k32 = ctypes.windll.kernel32
+        state = (ctypes.c_ulong * 3)(1, 0x1 | 0x4, 0)
+        k32.SetProcessInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+        k32.SetProcessInformation(k32.GetCurrentProcess(), 4, state, ctypes.sizeof(state))   # ProcessPowerThrottling
+        tstate = (ctypes.c_ulong * 3)(1, 0x1, 0)
+        k32.GetCurrentThread.restype = wt.HANDLE
+        k32.SetThreadInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+        k32.SetThreadInformation(k32.GetCurrentThread(), 3, tstate, ctypes.sizeof(tstate))   # ThreadPowerThrottling
+    except (AttributeError, OSError):
+        pass
+    try:
+        # The render thread (this one) joins the Multimedia Class Scheduler's "Games" task, as a
+        # game's render thread does: it is then scheduled ahead of ordinary work on the machine,
+        # which is what keeps a frame from starting late when something else wakes up.
+        avrt = ctypes.WinDLL("avrt")
+        avrt.AvSetMmThreadCharacteristicsW.restype = wt.HANDLE
+        avrt.AvSetMmThreadCharacteristicsW.argtypes = [wt.LPCWSTR, ctypes.POINTER(wt.DWORD)]
+        task = wt.DWORD(0)
+        h = avrt.AvSetMmThreadCharacteristicsW("Games", ctypes.byref(task))
+        if h:
+            avrt.AvSetMmThreadPriority.argtypes = [wt.HANDLE, ctypes.c_int]
+            avrt.AvSetMmThreadPriority(h, 1)                        # AVRT_PRIORITY_HIGH
     except (AttributeError, OSError):
         pass
     # The input thread must get the GIL promptly when it wakes; 5 ms (the default) is a whole frame.
@@ -80,6 +110,10 @@ class App:
         self.fps = 0.0
         self.cpu_ms = 0.0
         self.t_start = self.now = time.perf_counter()
+        self.build_state = "checking"  # ac/seal.py: official / modified / source, worked out in the background
+        threading.Thread(target=self._check_build, name="build-check", daemon=True).start()
+        self.ac_pending: list = []   # (guard, record) of runs whose play is still being checked (ac/)
+        self.pace = None             # tools/frametest.py: per-frame (start, late, work, swap) in seconds
         self.capturing = False       # Controller Lab is recording: keep this thread out of the way
 
         _tune_process()
@@ -124,7 +158,10 @@ class App:
         from . import display
 
         self.refresh_exact = None if self.offscreen else display.exact_refresh()   # 239.99, where GLFW says 240
+        self.driver_cap = None if self.offscreen else display.driver_cap(os.path.basename(sys.executable))   # NVIDIA "Max Frame Rate"
         self.auto_cap = display.cap_under(self.refresh_exact, self.refresh)
+        if self.driver_cap and self.driver_cap - 1 < self.auto_cap:
+            self.auto_cap = max(self.driver_cap - 1, 30)        # under the driver's: see display.driver_cap
         self.win_size = (int(mode.size.width * 0.6), int(mode.size.height * 0.6))
         if self.offscreen:
             glfw.window_hint(glfw.VISIBLE, False)
@@ -142,6 +179,12 @@ class App:
             glfw.terminate()
             raise RuntimeError("could not create an OpenGL 3.3 window")
         glfw.make_context_current(self.win)
+        self.hwnd = None
+        if not self.offscreen:
+            try:                                    # the anti-cheat hides this window from screen capture during runs
+                self.hwnd = glfw.get_win32_window(self.win)
+            except Exception:
+                self.hwnd = None
         if not self.offscreen:
             try:                                    # the crosshair icon in the title bar and on the taskbar
                 from . import icon
@@ -158,6 +201,8 @@ class App:
     def _on_key(self, win, key, scancode, action, mods):
         if action != glfw.RELEASE and key in _KEYS:
             self._keybuf.add(_KEYS[key])
+        if action == glfw.PRESS and key == glfw.KEY_V and mods & glfw.MOD_CONTROL:
+            self._keybuf.add("paste")
 
     def _on_char(self, win, codepoint):
         self._charbuf.append(chr(codepoint))
@@ -332,6 +377,32 @@ class App:
                 self.set_profile(name)
                 self.toast(f"Input: {name}")
 
+    def _check_build(self):
+        from .ac import seal
+
+        try:
+            self.build_state = seal.build_state()
+        except Exception:
+            self.build_state = "modified"
+
+    def _ac_tick(self):
+        """A run's behavioural check has finished: fold it into the record and rewrite its log line."""
+        if not self.ac_pending or self.game is not None:
+            return
+        keep = []
+        for guard, rec in self.ac_pending:
+            if guard.poll(rec):
+                try:
+                    self.log.update(rec)
+                except OSError as e:
+                    print(f"log: could not update run {rec.get('run_id')}: {e}")
+                st = rec["integrity"]["status"]
+                if st == "flagged":
+                    self.toast("Anti-cheat flagged that run - it is not counted (see its results)", 5.0)
+            elif rec.get("integrity", {}).get("behaviour") == "pending":
+                keep.append((guard, rec))
+        self.ac_pending = keep
+
     def _dpi_tick(self, now: float):
         """Keep the DPI setting equal to what the mouse itself says, where the mouse can say.
 
@@ -437,7 +508,7 @@ class App:
                 nav.add("accept")
             if "esc" in k or "backspace" in k:
                 nav.add("back")
-            for key, act in (("x", "x"), ("y", "y"), ("q", "lb"), ("e", "rb")):
+            for key, act in (("x", "x"), ("y", "y"), ("q", "lb"), ("e", "rb"), ("c", "c"), ("v", "v"), ("i", "i")):
                 if key in k:
                     nav.add(act)
             if self.game is None:       # in the menus W A S D are arrows too, and the wheel moves up and down
@@ -514,6 +585,11 @@ class App:
         win, pad, gfx = self.win, self.pad, self.gfx
         last = next_t = pc()
         acc_t, acc_n, acc_cpu = last, 0, 0.0
+        # How long before a frame's slot the limiter stops sleeping and spins. Sleeps wake late by
+        # a varying amount (Windows' timer, the scheduler): the margin follows the latest of the
+        # last few hundred wake-ups, so it is as small as this machine allows - less spinning -
+        # and never so small that a frame starts late.
+        margin, overs = 0.0013, []
         probe = [] if self.opts.exit_after else None      # --exit-after: frame-time report on exit
         while not glfw.window_should_close(win):
             if probe is not None and pc() - self.t_start > self.opts.exit_after:
@@ -528,11 +604,15 @@ class App:
                 if next_t < now - 0.05:
                     next_t = now          # fell behind (alt-tab, hitch): don't try to catch up
                 rem = next_t - now
-                # sleep() overshoots by up to ~1 ms on Windows. With 1.3 ms of margin the
-                # 99th-percentile frame measured within 0.01 ms of its slot (0.9 ms let
-                # ~1% of frames start late), for about a quarter of one core in spin.
-                if rem > 0.0015:
-                    time.sleep(rem - 0.0013)
+                # sleep() overshoots by up to ~1 ms on Windows; the margin (above) adapts to it.
+                if rem > margin + 0.0002:
+                    want = next_t - margin
+                    time.sleep(rem - margin)
+                    overs.append(pc() - want)
+                    if len(overs) >= 480:
+                        overs.sort()
+                        margin = min(max(overs[int(len(overs) * 0.998)] + 0.00015, 0.0003), 0.002)
+                        overs = []
                 while pc() < next_t:
                     pass
             now = self.now = pc()
@@ -564,6 +644,7 @@ class App:
             self.mouse.update(pc(), self.focused and not self.offscreen)
             self._sync_device()
             self._sync_input()
+            self._ac_tick()
             self._dpi_tick(now)
             if self.auto:
                 self.auto.step(now)
@@ -582,6 +663,8 @@ class App:
                 glfw.swap_buffers(win)
             if self.game:
                 self.game.presented(pc())
+            if self.pace is not None:
+                self.pace.append((now, (now - next_t) if cap else 0.0, t_work - now, pc() - t_work))
 
             acc_n += 1
             acc_cpu += t_work - now
@@ -601,7 +684,7 @@ class App:
                   f"pad {self.pad.hz and round(self.pad.hz)} Hz  poll {self.pad.poll_hz and round(self.pad.poll_hz)} Hz  "
                   f"raw mouse {'ok' if self.mouse.available and self.mouse.thread and self.mouse.thread.ok else self.mouse.error or 'off'}"
                   f" ({self.mouse.reports} reports, {self.mouse.hz and round(self.mouse.hz)} Hz)  "
-                  f"fullscreen {self.fullscreen}  {self.gfx.w}x{self.gfx.h}")
+                  f"fullscreen {self.fullscreen}  {self.gfx.w}x{self.gfx.h}  build {self.build_state}")
         self.close()
 
     def close(self):

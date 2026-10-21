@@ -116,6 +116,7 @@ class Game:
         self.kit = kit_cls(self) if kit_cls else None
         self.rec = None             # the run's capture, for its replay and its ghost (capture.py)
         self.capture = None
+        self.guard = None           # the anti-cheat for this run (ac/), from its first frame of play
         self.scn = scn_cls(self)
         if self.kit:
             self.kit.attach(self.scn)
@@ -198,6 +199,11 @@ class Game:
         if self.started:
             return
         self.started = True
+        if hasattr(self.app, "log"):        # a real run (not the ghost's headless one)
+            from . import ac
+
+            self.guard = ac.RunGuard(self.app, self)
+            self.guard.protect(True)
         self.t = 0.0
         self.offset = now
         self._m_ref = (self.mouse.reports, self.mouse.paired)
@@ -217,6 +223,8 @@ class Game:
 
     def _leave(self):
         gc.enable()
+        if self.guard is not None:
+            self.guard.protect(False)
         if self.kbm:
             self.app.grab_mouse(False)
         if self.pad.active != padmod.VIRTUAL_SLOT:
@@ -577,21 +585,26 @@ class Game:
             }, **fs),
             "stats": stats_,
         }
+        if self.endless:                # practice, kept apart: see __init__
+            rec["endless"] = True
+            rec["run_id"] += "-endless"
+        if self.rec is not None:        # the replay, and the targets the ghost will play (written in the background)
+            self.capture = self.rec.finish({"run_id": rec["run_id"], "time": rec["time"], "controller": rec["controller"],
+                                            "duration": round(self.t, 3), "endless": self.endless,
+                                            "stats": stats_, "metrics": [list(m) for m in scn.metrics],
+                                            "primary": scn.primary})
+        if self.guard is not None:      # the verdict: now, but for how it was played (in the background)
+            self.guard.judge(rec, self.capture)
+            app.ac_pending.append((self.guard, rec))
         try:
-            if self.endless:            # practice, kept apart: see __init__
-                rec["endless"] = True
-                rec["run_id"] += "-endless"
+            if self.endless:
                 app.log.save_endless(rec)
             else:
                 app.log.save(rec, {"events": scn.events, "trace": scn.trace()})
         except OSError as e:
             print(f"log: could not write run {rec['run_id']}: {e}")
             app.toast("Could not write this run to the log - see aimtuner.log", 6.0)
-        if self.rec is not None:        # the replay, and the targets the ghost will play (written in the background)
-            self.capture = self.rec.finish({"run_id": rec["run_id"], "time": rec["time"], "controller": rec["controller"],
-                                            "duration": round(self.t, 3), "endless": self.endless,
-                                            "stats": stats_, "metrics": [list(m) for m in scn.metrics],
-                                            "primary": scn.primary})
+        if self.capture is not None:
             capture.save_async(self.capture, app.log.dir, rec["run_id"])
         self.sfx("done")
         app.end_game(rec, self)
