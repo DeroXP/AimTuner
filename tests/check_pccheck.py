@@ -46,6 +46,26 @@ for name in ("Easy Anti-Cheat", "Ubisoft Anti-Cheat Service", "cheatsheet.pdf", 
     expect(pccheck.match(name) is None, f"'{name}' is not a cheat")
 
 
+# ------------------------------------------------------------------ labels: what kind of cheat, for which game
+for what, where, want in (
+        ("a Call of Duty or Siege cheat: a file", r"C:\x\r6_esp.exe", ("wallhack / ESP", "Siege")),
+        ("a Call of Duty or Siege cheat: a file", r"C:\x\warzone-hack-loader.exe", ("cheat loader / injector", "Call of Duty")),
+        ("an anti-cheat bypass: a file", r"C:\x\ricochet_bypass.sys", ("anti-cheat bypass", "Call of Duty")),
+        ("a Cronus script (.gpc)", r"C:\x\R6 Siege\ash_antirecoil.gpc", ("controller-adapter script (recoil / aim)", "Siege")),
+        ("an AutoHotkey script that moves the mouse while firing", r"C:\x\mw3 recoil.ahk", ("recoil macro", "Call of Duty")),
+        ("the parts of an AI aimbot in one Python (bettercam, ultralytics, pydirectinput)", r"C:\Py\site-packages",
+         ("aimbot (AI, reads the screen)", "game unknown")),
+        ("an Arduino board is connected as a mouse", r"\\?\HID#VID_2341&PID_8036", ("input device / adapter", "any game")),
+        ("the System event log was cleared in the last 30 days", "System log", ("hiding traces", "any game")),
+        ("something named as a cheat: a file", r"C:\x\my_cheats.dll", ("unknown cheat", "game unknown")),
+        ("a Call of Duty unlock tool: a file", r"C:\x\unlockall.zip", ("unlock tool", "Call of Duty")),
+        ("reWASD (remapper with macros) in program history (MuiCache)", "reWASD", ("macro tool", "any game"))):
+    got = pccheck.classify(what, where)
+    expect(got == want, f"labelled {want}: {got}")
+sc = pccheck.Scan()
+sc._hit("fail", "a Call of Duty or Siege cheat: a file", r"C:\x\r6_esp.exe")
+expect(sc.findings[0][3:] == ("wallhack / ESP", "Siege"), "every finding carries its kind and game")
+
 # ------------------------------------------------------------------ planted traces
 def planted(files: dict, env: dict):
     """A fake user profile with these files, and the environment pointing at it."""
@@ -97,7 +117,7 @@ try:
     sc.files()
     sc.temp()
     pccheck.os.walk = real_walk
-    got = {(w, os.path.basename(p)) for lvl, w, p in sc.findings if lvl == "fail"}
+    got = {(w, os.path.basename(p)) for lvl, w, p, *_ in sc.findings if lvl == "fail"}
     expect(any(p == "aimbot.exe" for _, p in got), "a cheat-named file on the Desktop fails it")
     expect(any(p == "rec.ahk" for _, p in got), "an AutoHotkey script pulling the mouse down while firing fails it")
     expect(not any(p == "hello.ahk" for _, p in got), "an ordinary AutoHotkey script does not")
@@ -121,7 +141,7 @@ try:
     sc.shell_history()
     sc.ghub()
     sc.python_kits()
-    whats = [w for lvl, w, p in sc.findings if lvl == "fail"]
+    whats = [w for lvl, w, p, *_ in sc.findings if lvl == "fail"]
     expect(sum("wipes traces" in w for w in whats) == 2, f"cleaning commands in the PowerShell history fail it ({whats})")
     expect(any("G HUB" in w for w in whats), "a G HUB recoil script fails it")
     expect(sum("AI aimbot" in w for w in whats) == 1, "screen-grab + detection + mouse control in one Python fails it (and "

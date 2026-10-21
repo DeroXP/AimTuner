@@ -119,6 +119,59 @@ STATE_FILE = "pccheck.json"
 VERSION = 1
 
 
+# ------------------------------------------------------------------------------- labelling
+# What kind of thing a finding most likely is, from what found it and what it is called; checked in
+# this order, first match wins. "unknown cheat" when it is a cheat but its name says no more.
+KINDS = [
+    (r"ai aimbot|parts of an ai aimbot|screen-grab", "aimbot (AI, reads the screen)"),
+    (r"colou?r aimbot|colour bot", "aimbot (colour)"),
+    (r"triggerbot", "triggerbot"),
+    (r"aimbot|aimmy", "aimbot"),
+    (r"recoil|moves the mouse while firing", "recoil macro"),
+    (r"cronus script|\.gpc", "controller-adapter script (recoil / aim)"),
+    (r"unlock tool", "unlock tool"),
+    (r"anti-cheat bypass|pc-check bypass", "anti-cheat bypass"),
+    (r"injector", "cheat loader / injector"),
+    (r"spoofer", "ID spoofer"),
+    (r"trace cleaner|wipes traces|cleared|switched off|set back|change journal|history .*cleared", "hiding traces"),
+    (r"cronus|kmbox|makcu|xim|arduino|teensy|pro micro|ch9329|input box|adapter", "input device / adapter"),
+    (r"rewasd|autohotkey|macro recorder", "macro tool"),
+    (r"cheat engine|memory editor|debugger", "memory editor / debugger"),
+]
+# for a "Call of Duty or Siege cheat", the name says which kind
+CHEAT_KINDS = [(r"esp|wall[-_ ]?hack|chams|radar|(^|[^a-z])wh([^a-z]|$)", "wallhack / ESP"),
+               (r"silent[-_ ]?aim|aim", "aimbot"), (r"loader|external|internal|inject", "cheat loader / injector"),
+               (r"menu|hack|cheat", "unknown cheat")]
+GAMES = [
+    (r"(^|[^a-z])(r6s?|siege|rainbow[-_ ]?six|mousetrap)([^a-z]|$)", "Siege"),
+    (r"(^|[^a-z])(cod|warzone|wz|mw[23]|bo[67]|black[-_ ]?ops|modern[-_ ]?warfare|call[-_ ]?of[-_ ]?duty|ricochet)([^a-z]|$)",
+     "Call of Duty"),
+    (r"fortnite", "Fortnite"), (r"valorant|vanguard", "Valorant"), (r"apex", "Apex Legends"),
+    (r"(^|[^a-z])(cs2|csgo|counter[-_ ]?strike)([^a-z]|$)", "Counter-Strike"), (r"(^|[^a-z])rust([^a-z]|$)", "Rust"),
+    (r"fivem|gta", "FiveM / GTA"), (r"roblox", "Roblox"), (r"minecraft", "Minecraft"), (r"dayz", "DayZ"),
+]
+# kinds that are not about one game
+ANY_GAME = ("hiding traces", "input device / adapter", "macro tool", "memory editor / debugger", "ID spoofer")
+
+
+def classify(what: str, where: str) -> tuple:
+    """(kind, game) for a finding - the most likely kind of cheat and the game it is for."""
+    w = what.lower()
+    name = where.lower().replace("\\", "/")
+    kind = next((k for rx, k in KINDS if re.search(rx, w)), None)
+    if kind is None and ("call of duty or siege" in w or "named as a cheat" in w or "defender caught" in w):
+        base = name.rsplit("/", 1)[-1]
+        kind = next((k for rx, k in CHEAT_KINDS if re.search(rx, base)), "unknown cheat")
+    if kind is None:
+        kind = "unknown cheat" if "cheat" in w else "other"
+    if kind in ANY_GAME:
+        return kind, "any game"
+    games = [g for rx, g in GAMES if re.search(rx, name)]
+    if not games and "call of duty unlock" in w:
+        games = ["Call of Duty"]
+    return kind, (" and ".join(dict.fromkeys(games)) if games else "game unknown")
+
+
 def match(name: str):
     """(what, level) for the first signature a name matches, or None."""
     n = name.lower()
@@ -158,7 +211,7 @@ class Scan:
         key = (level, what) if level == "warn" else (level, what, where.lower())
         if key not in self._seen:
             self._seen.add(key)
-            self.findings.append((level, what, where))
+            self.findings.append((level, what, where) + classify(what, where))
 
     def _names(self, source, names):
         """Match program or file names from one source against the signatures."""

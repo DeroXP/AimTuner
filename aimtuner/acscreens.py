@@ -310,15 +310,37 @@ class PCCheckScreen(Screen):
         if not finds:
             ui.text(x, y, "Nothing found.", "l", GOOD)
             y += 50
-        rows = finds[self.top:self.top + 14]
-        for lvl, what, where in rows:
+        rows = finds[self.top:self.top + 12]
+        for f in rows:
+            lvl, what, where = f[0], f[1], f[2]
+            kind, game = (f[3], f[4]) if len(f) >= 5 else (None, None)
             ui.text(x, y, "FAIL" if lvl == "fail" else "note", "m", BAD if lvl == "fail" else WARN)
-            ui.text(x + 90, y, what, "m", WHITE)
-            short = where if len(where) < 90 else "…" + where[-88:]
+            if kind:
+                # most likely what it is, and for which game - then what found it, and where
+                head = kind.upper() + ("" if game in (None, "any game") else f"  ·  {game}")
+                ui.text(x + 90, y, head, "m", BAD if lvl == "fail" else WARN)
+                ui.text(x + 90 + ui.width(head, "m") + 24, y, what, "m", WHITE)
+            else:
+                ui.text(x + 90, y, what, "m", WHITE)
+            short = where if len(where) < 110 else "…" + where[-108:]
             ui.text(x + 90, y + 28, short, "s", FAINT)
             y += 62
-        if len(finds) > self.top + 14:
-            ui.text(x, y, f"▼ {len(finds) - self.top - 14} more", "s", FAINT)
+        if finds and any(len(f) >= 5 for f in finds):
+            kinds = {}
+            for f in finds:
+                if f[0] == "fail" and len(f) >= 5:
+                    kinds.setdefault(f[3], set()).add(f[4])
+            if kinds:
+                def one(k, g):
+                    if g <= {"any game"}:
+                        return k                    # not about one game (hiding traces, an input device...)
+                    named = sorted(g - {"any game", "game unknown"})
+                    return f"{k} ({', '.join(named) if named else 'game unknown'})"
+
+                summary = "  ·  ".join(one(k, g) for k, g in kinds.items())
+                ui.text(x, 880, "Most likely: " + summary, "m", BAD)
+        if len(finds) > self.top + 12:
+            ui.text(x, y, f"▼ {len(finds) - self.top - 12} more", "s", FAINT)
         cov = r.get("coverage") or {}
         ui.para(x, 930, "Looked at: " + "  ·  ".join(f"{k} {v}" for k, v in cov.items()), "s", FAINT, w)
         _footer(ui, "Up / Down  scroll        X  check again        B  back")

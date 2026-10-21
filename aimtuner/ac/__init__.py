@@ -127,7 +127,10 @@ class RunGuard:
                 quick = pccheck.Scan(quick=True).run()
                 bad = [f for f in quick["findings"] if f[0] == "fail"]
                 if bad:
-                    flags.append("found during the run: " + bad[0][1])
+                    f = bad[0]
+                    label = (f" - most likely {f[3]}" + ("" if f[4] in ("any game", "game unknown") else f", {f[4]}")
+                             if len(f) >= 5 else "")
+                    flags.append("found during the run: " + f[1] + label)
             if not hide:
                 doubts.append("screen-capture protection was off (Settings), so a screen-reading aimbot could see the game")
             elif self.hide_failed:
